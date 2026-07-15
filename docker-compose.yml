@@ -1,0 +1,61 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    ports:
+      - "5666:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+    environment:
+      XIANGQI_HTTP_ADDR: ":8080"
+      XIANGQI_ALLOWED_ORIGIN: "http://localhost:5666"
+      XIANGQI_DATA_MODE: "memory"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+    entrypoint: ["/usr/local/bin/worker"]
+    environment:
+      XIANGQI_WORKER_ADDR: ":8081"
+    ports:
+      - "8081:8081"
+
+  mysql:
+    image: mysql:8.4
+    profiles: ["persistence"]
+    environment:
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-xiangqi}"
+      MYSQL_USER: "${MYSQL_USER:-xiangqi}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-change-me}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-change-root-me}"
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7.4-alpine
+    profiles: ["persistence"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  mysql-data:
+  redis-data:
+

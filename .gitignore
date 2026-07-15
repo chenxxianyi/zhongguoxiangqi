@@ -9,3 +9,6 @@ coverage/
 
 .npm-cache/
 .vite-*.log
+.cache/
+bin/
+uploads/

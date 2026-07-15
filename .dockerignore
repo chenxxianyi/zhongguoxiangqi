@@ -1,0 +1,12 @@
+.git
+.github
+.cache
+node_modules
+**/node_modules
+**/dist
+coverage
+h5-demo
+design-system
+*.md
+!README.md
+
