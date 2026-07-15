@@ -1,0 +1,4 @@
+interface:
+  display_name: "Go Backend Performance"
+  short_description: "Analyze Go backend bottlenecks with evidence"
+  default_prompt: "Use $go-backend-performance to analyze this Go backend and produce a performance report without modifying code."
