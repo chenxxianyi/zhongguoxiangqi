@@ -1,0 +1,15 @@
+{
+  "name": "xiangqi-lab",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @xiangqi-lab/web",
+    "build:web": "npm run build --workspace @xiangqi-lab/web",
+    "typecheck:web": "npm run typecheck --workspace @xiangqi-lab/web",
+    "test:web": "npm run test --workspace @xiangqi-lab/web",
+    "lint:web": "npm run lint --workspace @xiangqi-lab/web"
+  }
+}
