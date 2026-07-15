@@ -1,10 +1,170 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
+import { onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/common/AppIcon.vue'
+import { useAnalysisStore } from '@/stores/analysis'
+import { useMatchStore } from '@/stores/match'
+import { useUiStore } from '@/stores/ui'
+import { iccsToDisplay } from '@/utils/moveNotation'
+import type { MoveAnalysis } from '@/api/contracts'
+
+const route = useRoute()
+const router = useRouter()
+const analysis = useAnalysisStore()
+const match = useMatchStore()
+const ui = useUiStore()
+
+const selectedMovePly = ref<number | null>(null)
+
+onMounted(async () => {
+  const matchId = route.params.matchId as string
+  if (!matchId) {
+    ui.showToast('未指定对局 ID')
+    await router.push('/history')
+    return
+  }
+
+  // 加载对局信息
+  try {
+    await match.loadMatch(matchId)
+  } catch {
+    // 对局不存在也可以分析
+  }
+
+  // 加载分析结果
+  await analysis.loadOrCreateAnalysis(matchId)
+})
+
+onUnmounted(() => {
+  match.dispose()
+  analysis.reset()
+})
+
+// ── 分类中文名 ──
+const classLabels: Record<string, string> = {
+  best: '最佳着',
+  excellent: '优秀',
+  inaccuracy: '不精确',
+  mistake: '失误',
+  blunder: '大漏',
+  outside_top_candidates: '非候选',
+}
+
+const classColors: Record<string, string> = {
+  best: 'best',
+  excellent: 'good',
+  inaccuracy: 'inaccuracy',
+  mistake: 'mistake',
+  blunder: 'blunder',
+  outside_top_candidates: 'neutral',
+}
+
+function formatScore(loss?: number): string {
+  if (loss === undefined || loss === null) return '-'
+  if (loss === 0) return '0.00'
+  return `-${(loss / 100).toFixed(2)}`
+}
 </script>
 
 <template>
-  <section class="page active"><div class="analysis-summary"><div class="analysis-result"><span class="result-badge win large">胜</span><div><span class="section-kicker">对局结果</span><h2>稳住了最后的中局转换</h2><p>你在第 21 回合找到关键先手，并将优势保持至终局。</p></div></div><div class="analysis-score"><div><span>综合表现</span><strong>78</strong><small>/ 100</small></div><dl><div><dt>最佳着率</dt><dd>64%</dd></div><div><dt>平均损失</dt><dd>0.42</dd></div><div><dt>学习库命中</dt><dd>38%</dd></div></dl></div></div>
-  <div class="analysis-layout"><div class="analysis-main"><article class="surface eval-panel"><div class="panel-header"><div><span class="section-kicker">局面评分</span><h3>优势变化</h3></div><div class="chart-legend"><span><i class="red"/>红方优势</span><span><i class="ink"/>黑方优势</span></div></div><div class="eval-chart" role="img" aria-label="对局评分曲线，第 21 回合红方取得明显优势"><svg viewBox="0 0 760 260" preserveAspectRatio="none"><g class="chart-grid"><line x1="0" y1="45" x2="760" y2="45"/><line x1="0" y1="100" x2="760" y2="100"/><line x1="0" y1="155" x2="760" y2="155"/><line x1="0" y1="210" x2="760" y2="210"/></g><line class="zero-line" x1="0" y1="130" x2="760" y2="130"/><path class="eval-area" d="M0 132 C30 126,50 135,75 124 S120 108,145 118 S195 140,220 128 S260 95,295 104 S330 148,365 138 S415 92,450 101 S485 72,520 78 S555 58,590 62 S630 45,660 51 S710 32,760 38 L760 130 L0 130 Z"/><path class="eval-line" d="M0 132 C30 126,50 135,75 124 S120 108,145 118 S195 140,220 128 S260 95,295 104 S330 148,365 138 S415 92,450 101 S485 72,520 78 S555 58,590 62 S630 45,660 51 S710 32,760 38"/><line class="turn-marker" x1="450" y1="18" x2="450" y2="238"/><circle class="turn-dot" cx="450" cy="101" r="6"/></svg><div class="chart-tooltip"><span>第 21 回合</span><strong>+1.8</strong><small>车六进五 · 关键好着</small></div><div class="chart-axis"><span>1</span><span>10</span><span>20</span><span>30</span><span>42 回合</span></div></div></article>
-  <article class="surface turning-panel"><div class="panel-header"><div><span class="section-kicker">关键转折</span><h3>三步值得重新看</h3></div><span class="tag neutral">按影响排序</span></div><button v-for="(turn,index) in [['21','车六进五','抓住黑方后防空隙，评分从 +0.4 升至 +1.8。','好着','+1.4','best'],['16','炮五平六','过早交换中炮，错过持续压制机会。','失误','-0.9','mistake'],['29','马三进四','维持复杂度，同时限制黑车回防。','优秀','+0.7','good']]" :key="turn[0]" class="turning-row" :class="{ active: index === 0 }"><span class="turn-number">{{ turn[0] }}</span><span class="turn-board tiny-board"/><span><strong>{{ turn[1] }}</strong><small>{{ turn[2] }}</small></span><span class="turn-quality" :class="turn[5]">{{ turn[3] }}</span><b>{{ turn[4] }}</b></button></article></div>
-  <aside class="analysis-side"><article class="surface move-compare"><span class="section-kicker">第 21 回合</span><h3>实战着与候选着</h3><div class="candidate primary"><span>实战</span><strong>车六进五</strong><b>+1.8</b><small>深度 18 · 1.2M 节点</small></div><div class="candidate"><span>候选 2</span><strong>炮六进三</strong><b>+1.5</b><small>保持进攻压力</small></div><div class="candidate"><span>候选 3</span><strong>马三进四</strong><b>+1.2</b><small>稳健扩大优势</small></div><button class="secondary-button full">在棋盘上演示</button></article><article class="surface weakness-panel"><span class="section-kicker">重复模式</span><h3>过早兑车</h3><p>这是你近 8 盘对局中第 5 次在优势未稳定时主动兑车。</p><div class="pattern-score"><span>出现频率</span><strong>5 / 8</strong></div><button class="text-button small">加入专项练习 <AppIcon name="arrow" /></button></article></aside></div></section>
+  <section class="page active">
+    <!-- 加载状态 -->
+    <div v-if="analysis.loading" class="loading-state">
+      <p>正在分析对局，请稍候…</p>
+      <div class="import-progress" v-if="analysis.currentJob">
+        <span :style="{ width: `${analysis.currentJob.progress}%` }" />
+      </div>
+    </div>
+
+    <!-- 错误状态 -->
+    <div v-else-if="analysis.error" class="error-state">
+      <p>{{ analysis.error }}</p>
+      <button class="secondary-button" @click="router.push('/history')">返回历史对局</button>
+    </div>
+
+    <!-- 分析结果 -->
+    <template v-else-if="analysis.currentResult">
+      <!-- 摘要 -->
+      <div class="analysis-summary">
+        <div class="analysis-result">
+          <span class="result-badge win large">{{ match.outcome === 'red_win' ? '红胜' : match.outcome === 'black_win' ? '黑胜' : '和棋' }}</span>
+          <div>
+            <span class="section-kicker">对局结果</span>
+            <h2>{{ match.engine }} 分析报告</h2>
+            <p>共分析 {{ analysis.currentResult.analyzedMoves }} 步着法</p>
+          </div>
+        </div>
+        <div class="analysis-score">
+          <div>
+            <span>综合表现</span>
+            <strong>{{ Math.round(analysis.currentResult.bestMoveRate * 100) }}</strong>
+            <small>/ 100</small>
+          </div>
+          <dl>
+            <div><dt>最佳着率</dt><dd>{{ (analysis.currentResult.bestMoveRate * 100).toFixed(0) }}%</dd></div>
+            <div><dt>分析引擎</dt><dd>{{ analysis.currentResult.engine }}</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <!-- 着法列表 -->
+      <div class="analysis-layout">
+        <div class="analysis-main">
+          <article class="surface turning-panel">
+            <div class="panel-header">
+              <div>
+                <span class="section-kicker">逐着分析</span>
+                <h3>每步评分</h3>
+              </div>
+            </div>
+            <div v-if="analysis.currentResult.moves.length === 0" class="empty-state">
+              暂无分析数据
+            </div>
+            <button
+              v-for="(move, index) in analysis.currentResult.moves"
+              :key="move.ply"
+              class="turning-row"
+              :class="{ active: selectedMovePly === move.ply }"
+              @click="selectedMovePly = selectedMovePly === move.ply ? null : move.ply"
+            >
+              <span class="turn-number">{{ move.ply }}</span>
+              <span>
+                <strong>{{ iccsToDisplay(move.actualMove, match.fen, move.side as 'red' | 'black') }}</strong>
+                <small>最佳：{{ iccsToDisplay(move.bestMove, match.fen, move.side as 'red' | 'black') }}</small>
+              </span>
+              <span class="turn-quality" :class="classColors[move.classification]">
+                {{ classLabels[move.classification] || move.classification }}
+              </span>
+              <b>{{ formatScore(move.scoreLossCp) }}</b>
+            </button>
+          </article>
+        </div>
+
+        <aside class="analysis-side">
+          <article class="surface weakness-panel">
+            <span class="section-kicker">分析概要</span>
+            <h3>着法统计</h3>
+            <div class="pattern-score">
+              <span>最佳着</span>
+              <strong>{{ analysis.currentResult.moves.filter(m => m.classification === 'best').length }}</strong>
+            </div>
+            <div class="pattern-score">
+              <span>失误</span>
+              <strong>{{ analysis.currentResult.moves.filter(m => m.classification === 'mistake' || m.classification === 'blunder').length }}</strong>
+            </div>
+            <div class="pattern-score">
+              <span>分析深度</span>
+              <strong>{{ analysis.currentResult.moves[0]?.depth ?? 0 }} 层</strong>
+            </div>
+          </article>
+        </aside>
+      </div>
+    </template>
+
+    <!-- 无数据 -->
+    <div v-else class="empty-state">
+      <p>无法加载分析数据</p>
+      <button class="secondary-button" @click="router.push('/history')">返回历史对局</button>
+    </div>
+  </section>
 </template>

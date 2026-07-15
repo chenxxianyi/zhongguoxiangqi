@@ -1,4 +1,4 @@
-﻿export type Color = 'red' | 'black'
+export type Color = 'red' | 'black'
 export type PieceName = '车' | '马' | '相' | '象' | '仕' | '士' | '帅' | '将' | '炮' | '兵' | '卒'
 
 export interface BoardPiece {
@@ -19,11 +19,12 @@ export type SideChoice = 'red' | 'black' | 'random'
 export type AiMode = 'standard' | 'library' | 'style'
 
 export interface DifficultyProfile {
-  group: '入门' | '休闲' | '进阶' | '高手' | '大师'
+  level: number
   name: string
-  time: string
-  multiPv: string
-  randomness: string
+  moveTimeMs: number
+  maxDepth: number
+  maxNodes: number
+  multiPV: number
   description: string
 }
 

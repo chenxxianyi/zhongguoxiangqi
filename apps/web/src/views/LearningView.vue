@@ -1,22 +1,170 @@
-﻿<script setup lang="ts">
-import { ref, watch } from 'vue'
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import AppModal from '@/components/common/AppModal.vue'
 import { useLearningStore } from '@/stores/learning'
 import { useUiStore } from '@/stores/ui'
 
 const modalOpen = ref(false)
+const versionName = ref('')
 const learning = useLearningStore()
 const ui = useUiStore()
-watch(() => learning.completed, (done) => { if (done) ui.showToast('学习版本 v4 已完成模拟构建，等待质量确认') })
+
+onMounted(() => {
+  if (!learning.loaded) learning.fetchVersions()
+})
+
+async function handleCreate() {
+  await learning.createJob(versionName.value || undefined)
+  modalOpen.value = false
+  versionName.value = ''
+  if (learning.completed) {
+    ui.showToast('学习版本构建完成')
+  }
+}
+
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return '-'
+  try {
+    const d = new Date(dateStr)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  } catch {
+    return dateStr.slice(0, 10)
+  }
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'active': return '当前启用'
+    case 'ready': return '就绪'
+    case 'superseded': return '已归档'
+    case 'building': return '构建中'
+    default: return status
+  }
+}
+
+function statusClass(status: string): string {
+  switch (status) {
+    case 'active': return 'success'
+    case 'ready': return 'neutral'
+    case 'superseded': return 'neutral'
+    default: return 'neutral'
+  }
+}
 </script>
 
 <template>
-  <section class="page active"><div class="learning-hero"><div><span class="section-kicker">当前启用版本</span><h2>岭南名局精选 · v3</h2><p>基于 86 盘有效棋谱构建，包含 3,642 个可查询局面。AI 会在样本可信时参考学习库。</p><div class="inline-meta"><span>发布于 7 月 12 日</span><span>质量检查通过</span><span>画像置信度较高</span></div></div><div class="learning-actions"><button class="secondary-button">版本记录</button><button class="primary-button" @click="modalOpen = true"><AppIcon name="spark" />创建新版本</button></div></div>
-  <div class="quality-grid"><article v-for="item in [['有效棋谱','86','总计 92 盘','93%'],['有效着数','5,418','平均 63 着/盘','78%'],['局面覆盖','3,642','高置信局面 814','66%'],['非法着率','0.8%','7 盘含警告','8%']]" :key="item[0]" class="quality-card"><span>{{ item[0] }}</span><strong>{{ item[1] }}</strong><small>{{ item[2] }}</small><i :class="{ warning: item[0] === '非法着率' }" :style="{ '--value': item[3] }" /></article></div>
-  <div class="learning-grid"><article class="surface style-profile-panel"><div class="panel-header"><div><span class="section-kicker">棋风画像</span><h3>主动、灵活，偏好复杂中局</h3></div><span class="confidence"><i />置信度较高</span></div><div class="profile-visual"><svg viewBox="0 0 360 290" role="img" aria-label="棋风画像雷达图"><g class="hex-grid"><polygon points="180,25 292,90 292,220 180,285 68,220 68,90"/><polygon points="180,55 266,105 266,205 180,255 94,205 94,105"/><polygon points="180,86 240,120 240,190 180,224 120,190 120,120"/><path d="M180 25v260M68 90l224 130M292 90 68 220"/></g><polygon class="profile-area" points="180,42 273,101 250,196 180,238 105,198 87,101"/><g class="profile-dots"><circle cx="180" cy="42" r="5"/><circle cx="273" cy="101" r="5"/><circle cx="250" cy="196" r="5"/><circle cx="180" cy="238" r="5"/><circle cx="105" cy="198" r="5"/><circle cx="87" cy="101" r="5"/></g><g class="profile-labels"><text x="180" y="15">主动进攻 82</text><text x="302" y="87">子力活跃 76</text><text x="306" y="234">风险偏好 72</text><text x="180" y="304">残局耐心 58</text><text x="1" y="234">兑子倾向 38</text><text x="0" y="87">稳健程度 61</text></g></svg><div class="style-notes"><div><span class="note-index">01</span><p><strong>偏爱中炮体系</strong><small>前 12 回合中炮开局占比 46%</small></p></div><div><span class="note-index">02</span><p><strong>较早激活车路</strong><small>平均第 7.4 回合完成首车出动</small></p></div><div><span class="note-index">03</span><p><strong>复杂局面表现积极</strong><small>高复杂度局面主动将军率 18%</small></p></div></div></div></article>
-  <article class="surface opening-panel"><div class="panel-header"><div><span class="section-kicker">开局分布</span><h3>最常出现的五类布局</h3></div><button class="text-button small">全部开局 <AppIcon name="arrow" /></button></div><div class="bar-list"><div v-for="opening in [['中炮对屏风马','32 盘','82%','37%'],['仙人指路','18 盘','52%','21%'],['飞相局','15 盘','44%','17%'],['顺炮直车','12 盘','35%','14%'],['其他布局','9 盘','27%','11%']]" :key="opening[0]"><span><strong>{{ opening[0] }}</strong><small>{{ opening[1] }}</small></span><i><b :style="{ width: opening[2] }" /></i><em>{{ opening[3] }}</em></div></div><div class="result-donut"><div class="donut" aria-label="红胜 51%，黑胜 31%，和棋 18%"><span>86<small>有效棋谱</small></span></div><dl><div><dt><i class="red"/>红胜</dt><dd>51%</dd></div><div><dt><i class="ink"/>黑胜</dt><dd>31%</dd></div><div><dt><i class="gray"/>和棋</dt><dd>18%</dd></div></dl></div></article></div>
-  <article class="surface version-panel"><div class="panel-header"><div><span class="section-kicker">版本质量</span><h3>构建记录</h3></div><button class="filter-button"><AppIcon name="filter" />筛选版本</button></div><div v-for="(version,index) in [['v3 · 当前启用','岭南名局精选 · 86 盘 · 7 月 12 日 18:42','质量通过'],['v2','岭南名局精选 · 72 盘 · 6 月 28 日 12:16','已归档'],['v1','首个稳定版本 · 48 盘 · 6 月 10 日 09:30','已归档']]" :key="version[0]" class="version-row" :class="{ active: index === 0 }"><span class="version-line"><i /></span><div><strong>{{ version[0] }}</strong><small>{{ version[1] }}</small></div><span class="tag" :class="index === 0 ? 'success' : 'neutral'">{{ version[2] }}</span><button :class="index === 0 ? 'secondary-button small' : 'text-button small'">{{ index === 0 ? '查看报告' : '回滚至此' }}</button></div></article>
-  <AppModal :open="modalOpen" title="创建学习版本" description="将模拟安全校验、规范化、局面统计和棋风提取流程。" @close="modalOpen = false"><div class="fake-job"><div><span>{{ learning.progress ? learning.stage : '等待开始' }}</span><strong>{{ learning.progress }}%</strong></div><i><b :style="{ width: `${learning.progress}%` }" /></i></div><button class="primary-button full" :disabled="learning.running" @click="learning.start">{{ learning.completed ? '构建完成' : learning.running ? '构建中…' : '开始构建' }}</button></AppModal>
+  <section class="page active">
+    <!-- 当前版本 -->
+    <div class="learning-hero">
+      <div>
+        <span class="section-kicker">当前启用版本</span>
+        <h2>{{ learning.activeVersion?.name || '暂无学习版本' }}</h2>
+        <p v-if="learning.activeVersion">
+          基于 {{ learning.activeVersion.quality.validRecords }} 盘有效棋谱构建，包含 {{ learning.activeVersion.quality.coveredPositions }} 个可查询局面。
+          AI 会在样本可信时参考学习库。
+        </p>
+        <p v-else>导入棋谱后，可在此创建学习版本。</p>
+        <div v-if="learning.activeVersion" class="inline-meta">
+          <span>发布于 {{ formatDate(learning.activeVersion.createdAt) }}</span>
+          <span>算法 {{ learning.activeVersion.algorithm }}</span>
+        </div>
+      </div>
+      <div class="learning-actions">
+        <button class="secondary-button" @click="learning.fetchVersions()">刷新</button>
+        <button class="primary-button" @click="modalOpen = true">
+          <AppIcon name="spark" />创建新版本
+        </button>
+      </div>
+    </div>
+
+    <!-- 质量概览 -->
+    <div v-if="learning.activeVersion" class="quality-grid">
+      <article class="quality-card">
+        <span>有效棋谱</span>
+        <strong>{{ learning.activeVersion.quality.validRecords }}</strong>
+        <small>通过校验的记录</small>
+      </article>
+      <article class="quality-card">
+        <span>有效着数</span>
+        <strong>{{ learning.activeVersion.quality.validMoves }}</strong>
+        <small>全部合法着法</small>
+      </article>
+      <article class="quality-card">
+        <span>局面覆盖</span>
+        <strong>{{ learning.activeVersion.quality.coveredPositions }}</strong>
+        <small>独立局面数</small>
+      </article>
+      <article class="quality-card">
+        <span>低样本条目</span>
+        <strong>{{ learning.activeVersion.quality.lowSampleEntries }}</strong>
+        <small>样本 < 3 的局面</small>
+      </article>
+    </div>
+
+    <!-- 版本列表 -->
+    <article class="surface version-panel">
+      <div class="panel-header">
+        <div>
+          <span class="section-kicker">版本记录</span>
+          <h3>所有构建版本</h3>
+        </div>
+      </div>
+      <div v-if="learning.versions.length === 0" class="empty-state">
+        暂无学习版本。请先导入棋谱，然后创建新版本。
+      </div>
+      <div
+        v-for="version in learning.versions"
+        :key="version.id"
+        class="version-row"
+        :class="{ active: version.status === 'active' }"
+      >
+        <span class="version-line"><i /></span>
+        <div>
+          <strong>{{ version.name }}</strong>
+          <small>{{ formatDate(version.createdAt) }} · {{ version.quality.validRecords }} 盘</small>
+        </div>
+        <span class="tag" :class="statusClass(version.status)">{{ statusLabel(version.status) }}</span>
+        <button
+          v-if="version.status === 'ready'"
+          class="secondary-button small"
+          @click="learning.activateVersion(version.id)"
+        >启用</button>
+        <button
+          v-else-if="version.status === 'superseded'"
+          class="text-button small"
+          @click="learning.rollback(version.id)"
+        >回滚至此</button>
+      </div>
+    </article>
+
+    <!-- 创建版本弹窗 -->
+    <AppModal
+      :open="modalOpen"
+      title="创建学习版本"
+      description="将从已导入棋谱中构建新的学习版本。"
+      @close="modalOpen = false"
+    >
+      <div class="form-field">
+        <label>版本名称（可选）</label>
+        <input v-model="versionName" type="text" placeholder="例如：岭南名局精选 v4" />
+      </div>
+
+      <div v-if="learning.running || learning.completed" class="fake-job">
+        <div>
+          <span>{{ learning.stage }}</span>
+          <strong>{{ learning.progress }}%</strong>
+        </div>
+        <i><b :style="{ width: `${learning.progress}%` }" /></i>
+      </div>
+
+      <button
+        class="primary-button full"
+        :disabled="learning.running"
+        @click="handleCreate"
+      >
+        {{ learning.completed ? '构建完成' : learning.running ? '构建中…' : '开始构建' }}
+      </button>
+    </AppModal>
   </section>
 </template>
