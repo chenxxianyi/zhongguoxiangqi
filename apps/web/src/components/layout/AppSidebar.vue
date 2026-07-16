@@ -1,22 +1,61 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import AppIcon from '@/components/common/AppIcon.vue'
+import { listMatches } from '@/api/matches'
+import { listRecords } from '@/api/records'
+import { getEngineHealth } from '@/api/system'
 import { useUiStore } from '@/stores/ui'
+import { isActiveMatch } from '@/utils/matchResult'
+import type { MatchSnapshot } from '@/api/contracts'
+import type { EngineHealth } from '@/api/system'
 
 const route = useRoute()
 const ui = useUiStore()
+const recordCount = ref<number | null>(null)
+const activeMatch = ref<MatchSnapshot | null>(null)
+const engineHealth = ref<EngineHealth | null>(null)
+const engineUnavailable = ref(false)
 
-const navigation = [
+const navigation = computed(() => [
   { label: '首页', icon: 'grid', to: '/' },
   { label: '新对局', icon: 'play', to: '/new-game' },
-  { label: '对弈棋盘', icon: 'board', to: '/match', live: true },
+  ...(activeMatch.value
+    ? [{ label: '当前对局', icon: 'board', to: `/match/${activeMatch.value.id}`, live: true }]
+    : []),
   { label: '历史对局', icon: 'clock', to: '/history' },
-]
+])
+
 const learningNavigation = [
-  { label: '棋谱库', icon: 'record', to: '/records', count: '128' },
+  { label: '棋谱库', icon: 'record', to: '/records' },
   { label: '学习中心', icon: 'spark', to: '/learning' },
-  { label: '复盘分析', icon: 'chart', to: '/analysis' },
 ]
+
+const engineStatusLabel = computed(() => {
+  if (engineUnavailable.value) return '后端不可用'
+  if (!engineHealth.value) return '正在检查'
+  return engineHealth.value.status === 'healthy' ? '运行正常' : engineHealth.value.status
+})
+
+onMounted(async () => {
+  const [recordsResult, matchesResult, engineResult] = await Promise.allSettled([
+    listRecords(),
+    listMatches(),
+    getEngineHealth(),
+  ])
+
+  if (recordsResult.status === 'fulfilled') {
+    recordCount.value = recordsResult.value.length
+  }
+  if (matchesResult.status === 'fulfilled') {
+    activeMatch.value = matchesResult.value.find((item) => isActiveMatch(item.status)) ?? null
+  }
+  if (engineResult.status === 'fulfilled') {
+    engineHealth.value = engineResult.value
+  } else {
+    engineUnavailable.value = true
+  }
+})
 
 function close() {
   ui.sidebarOpen = false
@@ -29,22 +68,57 @@ function close() {
     <div class="brand">
       <div class="brand-seal" aria-hidden="true">境</div>
       <div><strong>棋境</strong><span>XIANGQI LAB</span></div>
-      <button class="icon-button sidebar-close" aria-label="关闭导航" @click="close"><AppIcon name="close" /></button>
+      <button class="icon-button sidebar-close" aria-label="关闭导航" @click="close">
+        <AppIcon name="close" />
+      </button>
     </div>
     <nav class="side-nav">
       <p class="nav-label">棋局</p>
-      <RouterLink v-for="item in navigation" :key="item.to" class="nav-item" :class="{ active: route.path === item.to }" :to="item.to" @click="close">
-        <AppIcon :name="item.icon" /><span>{{ item.label }}</span><span v-if="item.live" class="nav-dot" aria-label="有进行中的对局" />
+      <RouterLink
+        v-for="item in navigation"
+        :key="item.to"
+        class="nav-item"
+        :class="{ active: route.path === item.to }"
+        :to="item.to"
+        @click="close"
+      >
+        <AppIcon :name="item.icon" />
+        <span>{{ item.label }}</span>
+        <span v-if="item.live" class="nav-dot" aria-label="有进行中的对局" />
       </RouterLink>
       <p class="nav-label">研习</p>
-      <RouterLink v-for="item in learningNavigation" :key="item.to" class="nav-item" :class="{ active: route.path === item.to }" :to="item.to" @click="close">
-        <AppIcon :name="item.icon" /><span>{{ item.label }}</span><span v-if="item.count" class="nav-count">{{ item.count }}</span>
+      <RouterLink
+        v-for="item in learningNavigation"
+        :key="item.to"
+        class="nav-item"
+        :class="{ active: route.path === item.to }"
+        :to="item.to"
+        @click="close"
+      >
+        <AppIcon :name="item.icon" />
+        <span>{{ item.label }}</span>
+        <span v-if="item.to === '/records' && recordCount !== null" class="nav-count">
+          {{ recordCount }}
+        </span>
       </RouterLink>
     </nav>
     <div class="sidebar-bottom">
-      <RouterLink class="nav-item" :class="{ active: route.path === '/settings' }" to="/settings" @click="close"><AppIcon name="settings" /><span>设置与诊断</span></RouterLink>
-      <div class="engine-status"><span class="status-light" /><div><strong>演示引擎状态</strong><small>未连接真实后端</small></div></div>
-      <div class="profile-mini"><div class="avatar">林</div><div><strong>林间棋客</strong><span>进阶棋手</span></div><button class="icon-button" aria-label="账户选项"><AppIcon name="more" /></button></div>
+      <RouterLink
+        class="nav-item"
+        :class="{ active: route.path === '/settings' }"
+        to="/settings"
+        @click="close"
+      >
+        <AppIcon name="settings" />
+        <span>设置与诊断</span>
+      </RouterLink>
+      <div class="engine-status">
+        <span class="status-light" :class="{ unavailable: engineUnavailable }" />
+        <div>
+          <strong>{{ engineHealth?.name || '引擎服务' }}</strong>
+          <small>{{ engineStatusLabel }}</small>
+        </div>
+      </div>
     </div>
   </aside>
 </template>

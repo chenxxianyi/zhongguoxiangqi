@@ -48,6 +48,20 @@ export interface MatchSnapshot {
   updatedAt: string
 }
 
+export interface LegalMove {
+  move: string
+  from: string
+  to: string
+  capture: boolean
+}
+
+export interface LegalMovesResponse {
+  matchId: string
+  matchVersion: number
+  sideToMove: 'red' | 'black'
+  moves: LegalMove[]
+}
+
 export interface MatchEvent<T = unknown> {
   eventId: string
   matchId: string

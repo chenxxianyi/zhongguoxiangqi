@@ -21,13 +21,19 @@ export function connectMatchStream(matchId: string): StreamConnection {
   const handlers: Array<(event: MatchEvent) => void> = []
   let ws: WebSocket | null = null
   let closed = false
+  let lastEventId: string | null = null
   let reconnectDelay = 1000
   let reconnectTimer: number | undefined
 
   function connect() {
     if (closed) return
 
-    ws = new WebSocket(getWSURL(`/matches/${matchId}/stream`))
+    const cursor = lastEventId
+      ? `?afterEventId=${encodeURIComponent(lastEventId)}`
+      : ''
+    ws = new WebSocket(
+      getWSURL(`/matches/${encodeURIComponent(matchId)}/stream${cursor}`),
+    )
 
     ws.onopen = () => {
       reconnectDelay = 1000 // 连接成功后重置退避
@@ -39,6 +45,7 @@ export function connectMatchStream(matchId: string): StreamConnection {
         // 验证事件基本结构
         if (event && event.eventId && event.type) {
           handlers.forEach((h) => h(event))
+          lastEventId = event.eventId
         }
       } catch {
         // 忽略心跳等非 JSON 消息

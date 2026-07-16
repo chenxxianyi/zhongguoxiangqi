@@ -1,6 +1,12 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { apiRequest } from '@/api/client'
+import {
+  activateLearningVersion,
+  createLearningJob,
+  getLearningJob,
+  listLearningVersions,
+  rollbackLearningVersion,
+} from '@/api/learning'
 import type { LearningJob, LearningVersion } from '@/api/contracts'
 
 export const useLearningStore = defineStore('learning', () => {
@@ -10,12 +16,13 @@ export const useLearningStore = defineStore('learning', () => {
   const versions = ref<LearningVersion[]>([])
   const activeVersion = ref<LearningVersion | null>(null)
   const loaded = ref(false)
-  const stages = ref<string[]>([])
+  const versionsLoading = ref(false)
+  const versionsError = ref<string | null>(null)
+  const jobError = ref<string | null>(null)
   const stage = computed(() => {
-    if (currentJob.value?.status === 'running') {
-      const idx = Math.min(stages.value.length - 1, Math.floor(progress.value / 25))
-      return stages.value[idx] ?? '处理中…'
-    }
+    if (currentJob.value?.message) return currentJob.value.message
+    if (currentJob.value?.status === 'queued') return '等待后端处理'
+    if (currentJob.value?.status === 'running') return '后端正在构建'
     if (currentJob.value?.status === 'completed') return '构建完成'
     if (currentJob.value?.status === 'failed') return '构建失败'
     return '等待开始'
@@ -23,64 +30,67 @@ export const useLearningStore = defineStore('learning', () => {
   const completed = computed(() => currentJob.value?.status === 'completed')
   let pollTimer: number | undefined
 
-  // ── 获取版本列表 ──
   async function fetchVersions() {
+    versionsLoading.value = true
+    versionsError.value = null
     try {
-      const result = await apiRequest<{ items: LearningVersion[] }>('/learning/versions')
-      versions.value = result.items
-      // 找到当前启用的版本
-      activeVersion.value = result.items.find((v) => v.status === 'active') ?? null
+      const items = await listLearningVersions()
+      versions.value = items
+      activeVersion.value = items.find((version) => version.status === 'active') ?? null
       loaded.value = true
     } catch {
-      console.warn('无法获取学习版本列表')
+      versionsError.value = '无法从后端获取学习版本'
+    } finally {
+      versionsLoading.value = false
     }
   }
 
-  // ── 创建构建任务 ──
   async function createJob(name?: string, recordIds?: string[]) {
     if (running.value) return
     running.value = true
     progress.value = 0
-    stages.value = ['安全校验', '逐着规则验证', '局面着法统计', '棋风特征提取', '质量检查', '构建完成']
+    jobError.value = null
+    currentJob.value = null
 
     try {
-      currentJob.value = await apiRequest<LearningJob>('/learning/jobs', {
-        method: 'POST',
-        body: JSON.stringify({ name: name || '棋谱学习版本', recordIds }),
+      currentJob.value = await createLearningJob({
+        name: name?.trim() ?? '',
+        recordIds,
       })
-
-      // 轮询构建进度
       await pollJob(currentJob.value.id)
     } catch {
-      currentJob.value = {
-        id: '', status: 'failed', name: '构建失败',
-        progress: 0, recordCount: 0, moveCount: 0,
-        createdAt: new Date().toISOString(),
-      }
+      jobError.value = '创建学习任务失败'
       running.value = false
     }
   }
 
-  // ── 轮询任务状态 ──
   async function pollJob(jobId: string) {
     return new Promise<void>((resolve) => {
       const poll = async () => {
         try {
-          const job = await apiRequest<LearningJob>(`/learning/jobs/${jobId}`)
+          const job = await getLearningJob(jobId)
           currentJob.value = job
           progress.value = job.progress
 
-          if (job.status === 'completed' || job.status === 'failed') {
+          if (job.status === 'completed') {
             running.value = false
-            if (pollTimer) clearInterval(pollTimer)
+            if (pollTimer) clearTimeout(pollTimer)
             await fetchVersions()
+            resolve()
+            return
+          }
+          if (job.status === 'failed') {
+            running.value = false
+            jobError.value = job.message || '学习版本构建失败'
+            if (pollTimer) clearTimeout(pollTimer)
             resolve()
             return
           }
           pollTimer = window.setTimeout(poll, 500)
         } catch {
           running.value = false
-          if (pollTimer) clearInterval(pollTimer)
+          jobError.value = '无法获取学习任务状态'
+          if (pollTimer) clearTimeout(pollTimer)
           resolve()
         }
       }
@@ -88,45 +98,52 @@ export const useLearningStore = defineStore('learning', () => {
     })
   }
 
-  // ── 激活版本 ──
   async function activateVersion(id: string) {
     try {
-      const version = await apiRequest<LearningVersion>(`/learning/versions/${id}/activate`, {
-        method: 'POST',
-      })
-      activeVersion.value = version
+      activeVersion.value = await activateLearningVersion(id)
       await fetchVersions()
       return true
     } catch {
+      versionsError.value = '启用学习版本失败'
       return false
     }
   }
 
-  // ── 回滚版本 ──
   async function rollback(id: string) {
     try {
-      const version = await apiRequest<LearningVersion>(`/learning/versions/${id}/rollback`, {
-        method: 'POST',
-      })
-      activeVersion.value = version
+      activeVersion.value = await rollbackLearningVersion(id)
       await fetchVersions()
       return true
     } catch {
+      versionsError.value = '回滚学习版本失败'
       return false
     }
   }
 
-  // ── 重置 ──
   function reset() {
-    if (pollTimer) clearInterval(pollTimer)
+    if (pollTimer) clearTimeout(pollTimer)
     progress.value = 0
     running.value = false
     currentJob.value = null
+    jobError.value = null
   }
 
   return {
-    progress, running, completed, stage, stages,
-    versions, activeVersion, loaded, currentJob,
-    fetchVersions, createJob, activateVersion, rollback, reset,
+    progress,
+    running,
+    completed,
+    stage,
+    versions,
+    activeVersion,
+    loaded,
+    versionsLoading,
+    versionsError,
+    jobError,
+    currentJob,
+    fetchVersions,
+    createJob,
+    activateVersion,
+    rollback,
+    reset,
   }
 })

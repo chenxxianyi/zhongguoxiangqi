@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { apiRequest } from '@/api/client'
+import { ApiError } from '@/api/client'
+import { createAnalysisJob, getAnalysisJob, getMatchAnalysis } from '@/api/analysis'
 import type { AnalysisJob, AnalysisResult } from '@/api/contracts'
 
 export const useAnalysisStore = defineStore('analysis', () => {
@@ -17,21 +18,22 @@ export const useAnalysisStore = defineStore('analysis', () => {
 
     // 先尝试获取已有结果
     try {
-      const result = await apiRequest<AnalysisResult>(`/matches/${matchId}/analysis`)
+      const result = await getMatchAnalysis(matchId)
       currentResult.value = result
       currentJob.value = null
       loading.value = false
       return
-    } catch {
-      // 结果不存在，需要创建任务
+    } catch (requestError) {
+      if (!(requestError instanceof ApiError) || requestError.status !== 404) {
+        error.value = '无法从后端获取分析结果'
+        loading.value = false
+        return
+      }
     }
 
     // 创建分析任务
     try {
-      const job = await apiRequest<AnalysisJob>('/analysis/jobs', {
-        method: 'POST',
-        body: JSON.stringify({ matchId }),
-      })
+      const job = await createAnalysisJob(matchId)
       currentJob.value = job
       await pollJob(job.id, matchId)
     } catch {
@@ -45,15 +47,15 @@ export const useAnalysisStore = defineStore('analysis', () => {
     return new Promise<void>((resolve) => {
       const poll = async () => {
         try {
-          const job = await apiRequest<AnalysisJob>(`/analysis/jobs/${jobId}`)
+          const job = await getAnalysisJob(jobId)
           currentJob.value = job
 
           if (job.status === 'completed') {
             // 任务完成，获取结果
-            const result = await apiRequest<AnalysisResult>(`/matches/${matchId}/analysis`)
+            const result = await getMatchAnalysis(matchId)
             currentResult.value = result
             loading.value = false
-            if (pollTimer) clearInterval(pollTimer)
+            if (pollTimer) clearTimeout(pollTimer)
             resolve()
             return
           }
@@ -61,7 +63,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
           if (job.status === 'failed') {
             error.value = job.message || '分析失败'
             loading.value = false
-            if (pollTimer) clearInterval(pollTimer)
+            if (pollTimer) clearTimeout(pollTimer)
             resolve()
             return
           }
@@ -70,7 +72,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
         } catch {
           error.value = '获取分析状态失败'
           loading.value = false
-          if (pollTimer) clearInterval(pollTimer)
+          if (pollTimer) clearTimeout(pollTimer)
           resolve()
         }
       }
@@ -80,7 +82,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
 
   // ── 重置 ──
   function reset() {
-    if (pollTimer) clearInterval(pollTimer)
+    if (pollTimer) clearTimeout(pollTimer)
     currentResult.value = null
     currentJob.value = null
     loading.value = false

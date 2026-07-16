@@ -1,6 +1,7 @@
 ﻿# 棋境 Web 前端
 
-Vue 3 + TypeScript + Vite 转换版本，视觉基准来自根目录 `h5-demo`。
+Vue 3 + TypeScript + Vite 前端。生产运行时数据通过领域 API 模块读取 Go 后端，
+不包含 Demo 棋局、固定统计或静态业务兜底。
 
 ## 开发命令
 
@@ -21,13 +22,14 @@ npm.cmd run build:web
 
 - `/` 首页
 - `/new-game` 新对局
-- `/match` 对弈棋盘
+- `/match/:id` 对弈棋盘
 - `/records` 棋谱库
 - `/learning` 学习中心
-- `/analysis` 复盘分析
+- `/analysis/:matchId` 复盘分析
 - `/history` 历史对局
 - `/settings` 设置与诊断
 
 ## 说明
 
-当前版本完成了 H5 Demo 的 Vue 组件化、Router 路由化和 Pinia 状态化。棋盘交互、文件导入和学习任务是前端演示逻辑；接入后端后，规则、局面、对局版本和引擎结果必须以服务端为权威。
+棋盘规则、局面、对局版本、棋谱、学习任务、复盘结果、难度档位、引擎状态和
+许可证信息均来自后端。接口失败时页面显示明确错误，不生成静态业务数据作为兜底。

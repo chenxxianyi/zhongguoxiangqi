@@ -11,8 +11,9 @@
 - `internal/engine/builtin`：可取消、受预算约束的基础 Alpha-Beta 引擎
 - `internal/game`：对局状态机、乐观版本、幂等和异步 AI
 - `internal/records`、`learning`、`analysis`：棋谱、学习版本和复盘闭环
+- `internal/transport/httpapi`：按业务领域拆分的 REST、WebSocket/SSE 传输层
 - `migrations`：MySQL 8 数据模型基线
-- `h5-demo`：已确认的纯 H5 视觉原型
+- `docs/architecture.md`：前后端分层、依赖规则与扩展约定
 - `前端开发方案.md`：前端实施方案
 - `后端开发方案.md`：后端实施方案
 - `xiangqi-ai-codex-prompt.md`：完整项目需求
@@ -71,5 +72,5 @@ npm.cmd run build:web
 ```
 
 当前后端默认采用内存权威仓库，适合直接联调；进程重启会丢失数据。MySQL schema 已提供，
-但 MySQL/Redis 生产适配器和外部 Pikafish 进程适配器尚未伪装成已完成。具体接口、坐标、
-架构边界和许可证说明见 `docs/`。
+但 MySQL/Redis 生产适配器和外部 Pikafish 进程适配器尚未完成。前端通过领域 API 模块
+调用后端，Store 不再直接拼接业务 URL。具体接口、坐标、架构边界和许可证说明见 `docs/`。

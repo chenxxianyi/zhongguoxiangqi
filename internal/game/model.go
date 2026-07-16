@@ -78,6 +78,20 @@ type Snapshot struct {
 	UpdatedAt   time.Time           `json:"updatedAt"`
 }
 
+type LegalMove struct {
+	Move    string `json:"move"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Capture bool   `json:"capture"`
+}
+
+type LegalMovesResponse struct {
+	MatchID      string      `json:"matchId"`
+	MatchVersion int64       `json:"matchVersion"`
+	SideToMove   string      `json:"sideToMove"`
+	Moves        []LegalMove `json:"moves"`
+}
+
 func (m Match) Snapshot() Snapshot {
 	moves := append([]MoveRecord(nil), m.Moves...)
 	return Snapshot{

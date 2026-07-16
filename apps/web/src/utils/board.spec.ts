@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { candidateMoves, screenPosition } from '@/utils/board'
-import type { BoardPiece } from '@/types/xiangqi'
+import { fromICCSSquare, screenPosition, toICCSSquare } from '@/utils/board'
 
 describe('board display coordinates', () => {
   it('maps red and black orientations consistently', () => {
@@ -9,14 +8,10 @@ describe('board display coordinates', () => {
   })
 })
 
-describe('demo candidate moves', () => {
-  it('keeps every hint inside the 9 x 10 board', () => {
-    const piece: BoardPiece = { id: 'horse', color: 'red', name: '马', file: 1, rank: 9 }
-    for (const move of candidateMoves(piece)) {
-      expect(move.file).toBeGreaterThanOrEqual(0)
-      expect(move.file).toBeLessThanOrEqual(8)
-      expect(move.rank).toBeGreaterThanOrEqual(0)
-      expect(move.rank).toBeLessThanOrEqual(9)
-    }
+describe('ICCS board coordinates', () => {
+  it('round trips UI coordinates without using local move rules', () => {
+    expect(toICCSSquare(0, 6)).toBe('a3')
+    expect(fromICCSSquare('a3')).toEqual({ file: 0, rank: 6 })
+    expect(fromICCSSquare('invalid')).toBeNull()
   })
 })

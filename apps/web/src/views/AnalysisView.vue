@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAnalysisStore } from '@/stores/analysis'
 import { useMatchStore } from '@/stores/match'
 import { useUiStore } from '@/stores/ui'
 import { iccsToDisplay } from '@/utils/moveNotation'
+import {
+  getPlayerResult,
+  getPlayerResultClass,
+  getPlayerResultLabel,
+} from '@/utils/matchResult'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,11 +18,22 @@ const match = useMatchStore()
 const ui = useUiStore()
 
 const selectedMovePly = ref<number | null>(null)
+const matchLoading = ref(true)
+const matchError = ref<string | null>(null)
+const moveRecordsByPly = computed(() =>
+  new Map(match.moves.map((move) => [move.ply, move])),
+)
+const playerResult = computed(() => getPlayerResult(match.outcome, match.playerColor))
+
+function fenBeforeFor(ply: number): string {
+  return moveRecordsByPly.value.get(ply)?.fenBefore || match.initialFen
+}
 
 onMounted(async () => {
   const matchId = route.params.matchId as string
   if (!matchId) {
     ui.showToast('未指定对局 ID')
+    matchLoading.value = false
     await router.push('/history')
     return
   }
@@ -26,10 +42,12 @@ onMounted(async () => {
   try {
     await match.loadMatch(matchId)
   } catch {
-    // 对局不存在也可以分析
+    matchError.value = '无法从后端加载需要复盘的对局'
+    matchLoading.value = false
+    return
   }
 
-  // 加载分析结果
+  matchLoading.value = false
   await analysis.loadOrCreateAnalysis(matchId)
 })
 
@@ -66,8 +84,15 @@ function formatScore(loss?: number): string {
 
 <template>
   <section class="page active">
+    <div v-if="matchLoading" class="loading-state">正在读取后端对局…</div>
+
+    <div v-else-if="matchError" class="error-state">
+      <p>{{ matchError }}</p>
+      <button class="secondary-button" @click="router.push('/history')">返回历史对局</button>
+    </div>
+
     <!-- 加载状态 -->
-    <div v-if="analysis.loading" class="loading-state">
+    <div v-else-if="analysis.loading" class="loading-state">
       <p>正在分析对局，请稍候…</p>
       <div class="import-progress" v-if="analysis.currentJob">
         <span :style="{ width: `${analysis.currentJob.progress}%` }" />
@@ -85,7 +110,9 @@ function formatScore(loss?: number): string {
       <!-- 摘要 -->
       <div class="analysis-summary">
         <div class="analysis-result">
-          <span class="result-badge win large">{{ match.outcome === 'red_win' ? '红胜' : match.outcome === 'black_win' ? '黑胜' : '和棋' }}</span>
+          <span class="result-badge large" :class="getPlayerResultClass(playerResult)">
+            {{ getPlayerResultLabel(playerResult) }}
+          </span>
           <div>
             <span class="section-kicker">对局结果</span>
             <h2>{{ match.engine }} 分析报告</h2>
@@ -127,8 +154,8 @@ function formatScore(loss?: number): string {
             >
               <span class="turn-number">{{ move.ply }}</span>
               <span>
-                <strong>{{ iccsToDisplay(move.actualMove, match.fen, move.side as 'red' | 'black') }}</strong>
-                <small>最佳：{{ iccsToDisplay(move.bestMove, match.fen, move.side as 'red' | 'black') }}</small>
+                <strong>{{ iccsToDisplay(move.actualMove, fenBeforeFor(move.ply), move.side as 'red' | 'black') }}</strong>
+                <small>最佳：{{ iccsToDisplay(move.bestMove, fenBeforeFor(move.ply), move.side as 'red' | 'black') }}</small>
               </span>
               <span class="turn-quality" :class="classColors[move.classification]">
                 {{ classLabels[move.classification] || move.classification }}
@@ -152,7 +179,7 @@ function formatScore(loss?: number): string {
             </div>
             <div class="pattern-score">
               <span>分析深度</span>
-              <strong>{{ analysis.currentResult.moves[0]?.depth ?? 0 }} 层</strong>
+              <strong>{{ analysis.currentResult.moves[0] ? `${analysis.currentResult.moves[0].depth} 层` : '--' }}</strong>
             </div>
           </article>
         </aside>

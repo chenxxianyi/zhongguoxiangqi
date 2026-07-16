@@ -106,6 +106,39 @@ func TestMatchMoveVersionAndAsyncAI(t *testing.T) {
 	t.Fatal("AI move was not applied")
 }
 
+func TestLegalMovesUsesAuthoritativePositionAndPlayerTurn(t *testing.T) {
+	service := NewService(NewMemoryRepository(), firstMoveEngine{}, NewEventBus(), time.Second)
+	match, err := service.Create(CreateRequest{PlayerColor: "red", Difficulty: 1}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	moves, err := service.LegalMoves(match.ID, "a3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moves.MatchVersion != match.Version || moves.SideToMove != "red" {
+		t.Fatalf("legal move metadata: %+v", moves)
+	}
+	if len(moves.Moves) != 1 || moves.Moves[0].Move != "a3a4" || moves.Moves[0].Capture {
+		t.Fatalf("a3 legal moves: %+v", moves.Moves)
+	}
+
+	thinking, err := service.ApplyPlayerMove(match.ID, MoveRequest{
+		Move: "a3a4", ExpectedMatchVersion: match.Version,
+	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moves, err = service.LegalMoves(match.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if thinking.Status != StatusAIThinking || len(moves.Moves) != 0 {
+		t.Fatalf("AI turn exposed executable moves: %+v", moves)
+	}
+}
+
 func TestUndoCancelsStaleAIResult(t *testing.T) {
 	service := NewService(NewMemoryRepository(), firstMoveEngine{delay: 80 * time.Millisecond}, NewEventBus(), time.Second)
 	match, _ := service.Create(CreateRequest{PlayerColor: "red", Difficulty: 1}, "")

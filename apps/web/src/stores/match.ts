@@ -1,13 +1,33 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useRouter } from 'vue-router'
-import { apiRequest, createIdempotencyKey } from '@/api/client'
+import { ApiError } from '@/api/client'
+import {
+  createMatch as requestCreateMatch,
+  getLegalMoves,
+  getMatch,
+  offerMatchDraw,
+  resignMatch,
+  submitMatchMove,
+  undoMatch,
+} from '@/api/matches'
 import { connectMatchStream } from '@/api/stream'
-import { getPiecesFromFEN, toICCSCode, candidateMoves } from '@/utils/board'
-import { initialFEN } from '@/utils/fen'
+import {
+  fromICCSSquare,
+  getPiecesFromFEN,
+  toICCSCode,
+  toICCSSquare,
+} from '@/utils/board'
+import { getSideToMove } from '@/utils/fen'
 import { useUiStore } from './ui'
 import type { AiMode, BoardPiece, BoardSquare, Color } from '@/types/xiangqi'
-import type { MatchSnapshot, MatchStatus, MatchOutcome, MoveRecord } from '@/api/contracts'
+import type {
+  MatchEvent,
+  MatchSnapshot,
+  MatchStatus,
+  MatchOutcome,
+  MoveRecord,
+} from '@/api/contracts'
 
 export const useMatchStore = defineStore('match', () => {
   // ── 对局状态（来自后端） ──
@@ -20,7 +40,8 @@ export const useMatchStore = defineStore('match', () => {
   const aiMode = ref<AiMode>('standard')
   const engine = ref('')
   const allowUndo = ref(true)
-  const fen = ref(initialFEN)
+  const initialFen = ref('')
+  const fen = ref('')
   const moves = ref<MoveRecord[]>([])
   const outcome = ref<MatchOutcome>('ongoing')
   const drawOffered = ref(false)
@@ -30,7 +51,9 @@ export const useMatchStore = defineStore('match', () => {
   const soundEnabled = ref(true)
   const selectedPos = ref<{ file: number; rank: number } | null>(null)
   const hints = ref<BoardSquare[]>([])
+  const legalMovesLoading = ref(false)
   const thinking = ref(false)
+  const rejectedMove = ref<{ id: number; file: number; rank: number } | null>(null)
 
   // ── 派生状态 ──
   const pieces = computed<BoardPiece[]>(() => getPiecesFromFEN(fen.value))
@@ -57,10 +80,54 @@ export const useMatchStore = defineStore('match', () => {
 
   // ── 内部状态 ──
   let streamHandle: ReturnType<typeof connectMatchStream> | null = null
+  let rejectedMoveSequence = 0
+  let legalMoveRequestSequence = 0
+  let resyncPromise: Promise<void> | null = null
+  const legalMoveCache = new Map<string, BoardSquare[]>()
   const router = useRouter()
+
+  function legalMoveCacheKey(
+    id: string,
+    matchVersion: number,
+    file: number,
+    rank: number,
+  ) {
+    return `${id}:${matchVersion}:${toICCSSquare(file, rank)}`
+  }
+
+  function invalidateLegalMoveCache(clearSelected = true) {
+    legalMoveCache.clear()
+    legalMoveRequestSequence += 1
+    legalMovesLoading.value = false
+    hints.value = []
+    if (clearSelected) selectedPos.value = null
+  }
+
+  function upsertMove(move: MoveRecord) {
+    const existingIndex = moves.value.findIndex((candidate) => candidate.ply === move.ply)
+    if (existingIndex >= 0) {
+      const existing = moves.value[existingIndex]!
+      if (existing.move === move.move && existing.fenAfter === move.fenAfter) return false
+      const nextMoves = [...moves.value]
+      nextMoves[existingIndex] = move
+      moves.value = nextMoves
+      return true
+    }
+
+    moves.value = [...moves.value, move].sort((left, right) => left.ply - right.ply)
+    return true
+  }
 
   // ── 从 MatchSnapshot 填充状态 ──
   function applySnapshot(snapshot: MatchSnapshot) {
+    if (
+      snapshot.id === matchId.value
+      && snapshot.version < version.value
+    ) return
+
+    if (snapshot.id !== matchId.value || snapshot.version !== version.value) {
+      invalidateLegalMoveCache()
+    }
     matchId.value = snapshot.id
     version.value = snapshot.version
     status.value = snapshot.status
@@ -70,6 +137,7 @@ export const useMatchStore = defineStore('match', () => {
     aiMode.value = snapshot.aiMode ?? 'standard'
     engine.value = snapshot.engine
     allowUndo.value = snapshot.allowUndo
+    initialFen.value = snapshot.initialFen
     fen.value = snapshot.fen
     moves.value = snapshot.moves ?? []
     outcome.value = snapshot.outcome
@@ -77,11 +145,37 @@ export const useMatchStore = defineStore('match', () => {
     thinking.value = snapshot.status === 'active_ai_thinking'
   }
 
+  async function synchronizeMatch(id: string) {
+    if (resyncPromise) return resyncPromise
+
+    resyncPromise = getMatch(id)
+      .then((snapshot) => {
+        if (matchId.value === null || snapshot.id === matchId.value) {
+          applySnapshot(snapshot)
+        }
+      })
+      .finally(() => {
+        resyncPromise = null
+      })
+    return resyncPromise
+  }
+
   // ── 事件处理 ──
-  function handleEvent(event: { type: string; payload: unknown; matchVersion: number }) {
+  function handleEvent(event: MatchEvent) {
+    if (matchId.value && event.matchId !== matchId.value) return
     // 忽略旧版本事件
     if (event.matchVersion < version.value) return
+    if (event.matchVersion > version.value + 1) {
+      void synchronizeMatch(event.matchId).catch(() => {
+        const ui = useUiStore()
+        ui.showToast('实时状态有缺口，请刷新后继续')
+      })
+      return
+    }
 
+    if (event.matchVersion !== version.value) {
+      invalidateLegalMoveCache()
+    }
     version.value = event.matchVersion
 
     switch (event.type) {
@@ -92,14 +186,12 @@ export const useMatchStore = defineStore('match', () => {
 
       case 'match.move_accepted': {
         const moveRecord = event.payload as MoveRecord
-        moves.value = [...moves.value, moveRecord]
-        // 切换行棋方
-        sideToMove.value = sideToMove.value === 'red' ? 'black' : 'red'
+        upsertMove(moveRecord)
         status.value = 'active_ai_thinking'
         thinking.value = true
-        // 更新 FEN
         if (moveRecord.fenAfter) {
           fen.value = moveRecord.fenAfter
+          sideToMove.value = getSideToMove(moveRecord.fenAfter)
         }
         break
       }
@@ -116,11 +208,11 @@ export const useMatchStore = defineStore('match', () => {
           nodes: number
           stoppedReason: string
         }
-        moves.value = [...moves.value, payload.move]
+        upsertMove(payload.move)
         if (payload.move.fenAfter) {
           fen.value = payload.move.fenAfter
+          sideToMove.value = getSideToMove(payload.move.fenAfter)
         }
-        sideToMove.value = sideToMove.value === 'red' ? 'black' : 'red'
         status.value = 'active_player_turn'
         thinking.value = false
         break
@@ -167,15 +259,11 @@ export const useMatchStore = defineStore('match', () => {
     aiModeParam: AiMode = 'standard',
     allowUndoParam = true,
   ) {
-    const snapshot = await apiRequest<MatchSnapshot>('/matches', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': createIdempotencyKey('match-create') },
-      body: JSON.stringify({
-        playerColor: playerColorParam,
-        difficulty: difficultyParam,
-        aiMode: aiModeParam,
-        allowUndo: allowUndoParam,
-      }),
+    const snapshot = await requestCreateMatch({
+      playerColor: playerColorParam,
+      difficulty: difficultyParam,
+      aiMode: aiModeParam,
+      allowUndo: allowUndoParam,
     })
     applySnapshot(snapshot)
     connectStream(snapshot.id)
@@ -185,27 +273,80 @@ export const useMatchStore = defineStore('match', () => {
 
   // ── 加载已有对局 ──
   async function loadMatch(id: string) {
-    const snapshot = await apiRequest<MatchSnapshot>(`/matches/${id}`)
+    const snapshot = await getMatch(id)
     applySnapshot(snapshot)
     connectStream(id)
   }
 
   // ── 选取棋子 ──
-  function selectPieceAt(file: number, rank: number) {
+  async function selectPieceAt(file: number, rank: number) {
     const piece = pieces.value.find((p) => p.file === file && p.rank === rank)
-    if (!piece) return
+    if (!piece || piece.color !== playerColor.value || !myTurn.value || !matchId.value) return
+
     selectedPos.value = { file, rank }
-    hints.value = candidateMoves(piece)
+    hints.value = []
+    const requestID = ++legalMoveRequestSequence
+    const requestMatchID = matchId.value
+    const requestVersion = version.value
+    const cacheKey = legalMoveCacheKey(requestMatchID, requestVersion, file, rank)
+    const cached = legalMoveCache.get(cacheKey)
+    if (cached) {
+      hints.value = [...cached]
+      return
+    }
+
+    legalMovesLoading.value = true
+    try {
+      const response = await getLegalMoves(requestMatchID, toICCSSquare(file, rank))
+      if (
+        requestID !== legalMoveRequestSequence
+        || matchId.value !== requestMatchID
+        || version.value !== requestVersion
+        || selectedPos.value?.file !== file
+        || selectedPos.value?.rank !== rank
+      ) return
+
+      if (response.matchVersion !== requestVersion) {
+        await synchronizeMatch(requestMatchID)
+        return
+      }
+      const authoritativeHints = response.moves
+        .map((move) => fromICCSSquare(move.to))
+        .filter((square): square is BoardSquare => square !== null)
+      legalMoveCache.set(cacheKey, authoritativeHints)
+      hints.value = [...authoritativeHints]
+    } catch {
+      if (requestID === legalMoveRequestSequence) {
+        const ui = useUiStore()
+        ui.showToast('暂时无法获取合法落点，请稍后重试')
+      }
+    } finally {
+      if (requestID === legalMoveRequestSequence) {
+        legalMovesLoading.value = false
+      }
+    }
   }
 
   function clearSelection() {
+    legalMoveRequestSequence += 1
+    legalMovesLoading.value = false
     selectedPos.value = null
     hints.value = []
+  }
+
+  function restoreSelection(file: number, rank: number) {
+    if (!matchId.value) return
+    selectedPos.value = { file, rank }
+    const cached = legalMoveCache.get(
+      legalMoveCacheKey(matchId.value, version.value, file, rank),
+    )
+    hints.value = cached ? [...cached] : []
   }
 
   // ── 提交着法 ──
   async function submitMove(fromFile: number, fromRank: number, toFile: number, toRank: number) {
     if (!matchId.value) return
+    const submittedMatchID = matchId.value
     const iccs = toICCSCode(fromFile, fromRank, toFile, toRank)
 
     // 乐观更新：切换为 AI 思考状态
@@ -215,22 +356,45 @@ export const useMatchStore = defineStore('match', () => {
     clearSelection()
 
     try {
-      const snapshot = await apiRequest<MatchSnapshot>(`/matches/${matchId.value}/moves`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': createIdempotencyKey('match-move') },
-        body: JSON.stringify({
-          move: iccs,
-          expectedMatchVersion: version.value,
-        }),
+      const snapshot = await submitMatchMove(submittedMatchID, {
+        move: iccs,
+        expectedMatchVersion: version.value,
       })
       // 用服务端快照同步状态
       applySnapshot(snapshot)
-    } catch {
+    } catch (error) {
       // 请求失败，恢复状态
       status.value = prevStatus
       thinking.value = false
+      rejectedMoveSequence += 1
+      rejectedMove.value = { id: rejectedMoveSequence, file: fromFile, rank: fromRank }
+      restoreSelection(fromFile, fromRank)
       const ui = useUiStore()
-      ui.showToast('着法提交失败，请重试')
+      if (error instanceof ApiError) {
+        switch (error.body.code) {
+          case 'ILLEGAL_MOVE':
+            ui.showToast('该着法不合法')
+            return
+          case 'MATCH_VERSION_CONFLICT':
+            ui.showToast('局面已更新，正在同步')
+            try {
+              await synchronizeMatch(submittedMatchID)
+            } catch {
+              ui.showToast('同步最新局面失败，请刷新页面')
+            }
+            return
+          case 'MATCH_NOT_FOUND':
+          case 'NOT_FOUND':
+            ui.showToast('对局不存在或已失效')
+            reset()
+            await router.push('/history')
+            return
+          default:
+            ui.showToast(error.body.message || '着法提交失败，请重试')
+            return
+        }
+      }
+      ui.showToast('网络连接异常，请重试')
     }
   }
 
@@ -238,10 +402,8 @@ export const useMatchStore = defineStore('match', () => {
   async function undo() {
     if (!matchId.value || !allowUndo.value) return false
     try {
-      const snapshot = await apiRequest<MatchSnapshot>(`/matches/${matchId.value}/undo`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': createIdempotencyKey('match-undo') },
-        body: JSON.stringify({ expectedMatchVersion: version.value }),
+      const snapshot = await undoMatch(matchId.value, {
+        expectedMatchVersion: version.value,
       })
       applySnapshot(snapshot)
       clearSelection()
@@ -259,10 +421,8 @@ export const useMatchStore = defineStore('match', () => {
   async function resign() {
     if (!matchId.value) return false
     try {
-      const snapshot = await apiRequest<MatchSnapshot>(`/matches/${matchId.value}/resign`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': createIdempotencyKey('match-resign') },
-        body: JSON.stringify({ expectedMatchVersion: version.value }),
+      const snapshot = await resignMatch(matchId.value, {
+        expectedMatchVersion: version.value,
       })
       applySnapshot(snapshot)
       clearSelection()
@@ -278,14 +438,9 @@ export const useMatchStore = defineStore('match', () => {
   async function offerDraw() {
     if (!matchId.value) return false
     try {
-      const result = await apiRequest<{ accepted: boolean; match: MatchSnapshot }>(
-        `/matches/${matchId.value}/draw-offers`,
-        {
-          method: 'POST',
-          headers: { 'Idempotency-Key': createIdempotencyKey('match-draw') },
-          body: JSON.stringify({ expectedMatchVersion: version.value }),
-        },
-      )
+      const result = await offerMatchDraw(matchId.value, {
+        expectedMatchVersion: version.value,
+      })
       applySnapshot(result.match)
       if (result.accepted) {
         const ui = useUiStore()
@@ -306,6 +461,7 @@ export const useMatchStore = defineStore('match', () => {
   // ── 重置（回到初始局面） ──
   function reset() {
     disconnectStream()
+    invalidateLegalMoveCache()
     matchId.value = null
     version.value = 0
     status.value = 'active_player_turn'
@@ -315,12 +471,13 @@ export const useMatchStore = defineStore('match', () => {
     aiMode.value = 'standard'
     engine.value = ''
     allowUndo.value = true
-    fen.value = initialFEN
+    initialFen.value = ''
+    fen.value = ''
     moves.value = []
     outcome.value = 'ongoing'
     drawOffered.value = false
     thinking.value = false
-    clearSelection()
+    rejectedMove.value = null
   }
 
   // ── 清理 ──
@@ -332,9 +489,9 @@ export const useMatchStore = defineStore('match', () => {
   return {
     // 状态
     matchId, version, status, playerColor, sideToMove, difficulty,
-    engine, aiMode, allowUndo, fen, moves, outcome, drawOffered,
+    engine, aiMode, allowUndo, initialFen, fen, moves, outcome, drawOffered,
     // UI
-    flipped, soundEnabled, selectedPos, hints, thinking,
+    flipped, soundEnabled, selectedPos, hints, legalMovesLoading, thinking, rejectedMove,
     // 派生
     pieces, myTurn, isFinished, statusLabel, lastMove,
     // 方法

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useRecordsStore } from '@/stores/records'
 import { useUiStore } from '@/stores/ui'
@@ -7,9 +7,19 @@ import { useUiStore } from '@/stores/ui'
 const recordsStore = useRecordsStore()
 const ui = useUiStore()
 const input = ref<HTMLInputElement | null>(null)
+const searchQuery = ref('')
+
+const filteredRecords = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  if (!query) return recordsStore.records
+  return recordsStore.records.filter((record) =>
+    [record.name, record.format, record.result, record.outcome, ...(record.tags ?? [])]
+      .some((value) => value?.toLocaleLowerCase().includes(query)),
+  )
+})
 
 onMounted(() => {
-  if (!recordsStore.loaded) recordsStore.fetchRecords()
+  if (!recordsStore.loaded) void recordsStore.fetchRecords()
 })
 
 async function upload(event: Event) {
@@ -21,19 +31,23 @@ async function upload(event: Event) {
   recordsStore.importTitle = `正在处理 ${files.length} 个文件…`
 
   const count = await recordsStore.importRecords(files)
-  ui.showToast(`成功导入 ${count} 盘棋谱`)
-  // 重置 input 以允许重复选择相同文件
+  ui.showToast(count > 0 ? `成功导入 ${count} 盘棋谱` : '未导入棋谱，请检查文件内容')
   if (input.value) input.value.value = ''
 }
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '-'
+async function removeRecord(id: string) {
   try {
-    const d = new Date(dateStr)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    await recordsStore.deleteRecord(id)
+    ui.showToast('棋谱已删除')
   } catch {
-    return dateStr.slice(0, 10)
+    ui.showToast('删除棋谱失败')
   }
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return '-'
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function outcomeLabel(outcome: string): string {
@@ -41,6 +55,7 @@ function outcomeLabel(outcome: string): string {
     case 'red_win': return '红胜'
     case 'black_win': return '黑胜'
     case 'draw': return '和棋'
+    case 'ongoing': return '未决'
     default: return outcome
   }
 }
@@ -49,7 +64,6 @@ function outcomeClass(outcome: string): string {
   switch (outcome) {
     case 'red_win': return 'win-soft'
     case 'black_win': return 'loss-soft'
-    case 'draw': return 'neutral'
     default: return 'neutral'
   }
 }
@@ -61,7 +75,7 @@ function outcomeClass(outcome: string): string {
       <div>
         <span class="section-kicker">棋谱管理</span>
         <h2>让经典棋局成为你的学习资料</h2>
-        <p>支持文本、PGN、坐标记谱、常见中文记谱和项目 JSON 格式。</p>
+        <p>支持文本、PGN 坐标记谱和项目 JSON 格式，导入内容由后端逐着验证。</p>
       </div>
       <button class="primary-button" :disabled="recordsStore.importing" @click="input?.click()">
         <AppIcon name="upload" />{{ recordsStore.importing ? '导入中…' : '导入棋谱' }}
@@ -72,11 +86,25 @@ function outcomeClass(outcome: string): string {
     <div class="records-grid">
       <div class="surface records-main">
         <div class="records-toolbar">
-          <div class="search-field"><AppIcon name="eye" /><input type="search" placeholder="搜索棋手、赛事或开局" aria-label="搜索棋谱"></div>
-          <button class="filter-button"><AppIcon name="filter" />筛选</button>
-          <span class="record-total">共 {{ recordsStore.totalRecords }} 盘</span>
+          <div class="search-field">
+            <AppIcon name="eye" />
+            <input
+              v-model="searchQuery"
+              type="search"
+              placeholder="搜索名称、格式或标签"
+              aria-label="搜索棋谱"
+            >
+          </div>
+          <span v-if="recordsStore.loaded" class="record-total">
+            共 {{ recordsStore.totalRecords }} 盘
+          </span>
         </div>
-        <div class="record-table-wrap">
+        <div v-if="recordsStore.loading" class="loading-state">正在读取后端棋谱…</div>
+        <div v-else-if="recordsStore.error" class="error-state">
+          <p>{{ recordsStore.error }}</p>
+          <button class="secondary-button small" @click="recordsStore.fetchRecords">重新加载</button>
+        </div>
+        <div v-else class="record-table-wrap">
           <table class="record-table">
             <thead>
               <tr>
@@ -89,18 +117,24 @@ function outcomeClass(outcome: string): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-if="recordsStore.records.length === 0">
-                <td colspan="6" class="empty-state">暂无棋谱，点击"导入棋谱"按钮上传</td>
+              <tr v-if="filteredRecords.length === 0">
+                <td colspan="6" class="empty-state">
+                  {{ searchQuery ? '没有匹配的后端棋谱' : '暂无棋谱，点击“导入棋谱”上传' }}
+                </td>
               </tr>
-              <tr v-for="record in recordsStore.records" :key="record.id">
+              <tr v-for="record in filteredRecords" :key="record.id">
                 <td><strong>{{ record.name }}</strong></td>
                 <td>{{ record.format }}</td>
-                <td><span class="tag" :class="outcomeClass(record.outcome)">{{ outcomeLabel(record.outcome) }}</span></td>
+                <td>
+                  <span class="tag" :class="outcomeClass(record.outcome)">
+                    {{ outcomeLabel(record.outcome) }}
+                  </span>
+                </td>
                 <td>{{ record.moveCount }} 步</td>
                 <td>{{ formatDate(record.createdAt) }}</td>
                 <td>
-                  <button class="icon-button" aria-label="删除" @click="recordsStore.deleteRecord(record.id)">
-                    <AppIcon name="eye" />
+                  <button class="icon-button" aria-label="删除棋谱" @click="removeRecord(record.id)">
+                    <AppIcon name="close" />
                   </button>
                 </td>
               </tr>
@@ -120,11 +154,14 @@ function outcomeClass(outcome: string): string {
               {{ recordsStore.importing ? '导入中' : '就绪' }}
             </span>
           </div>
-          <div class="import-progress" v-if="recordsStore.importing || recordsStore.importProgress > 0">
+          <div v-if="recordsStore.importing || recordsStore.importProgress > 0" class="import-progress">
             <span :style="{ width: `${recordsStore.importProgress}%` }" />
           </div>
           <div class="import-stats">
-            <div><strong>{{ recordsStore.totalRecords }}</strong><span>总棋谱</span></div>
+            <div>
+              <strong>{{ recordsStore.loaded ? recordsStore.totalRecords : '--' }}</strong>
+              <span>后端棋谱</span>
+            </div>
           </div>
         </article>
 
@@ -132,7 +169,10 @@ function outcomeClass(outcome: string): string {
           <div class="panel-header">
             <div>
               <span class="section-kicker">棋谱集合</span>
-              <h3>{{ recordsStore.totalRecords > 0 ? `${recordsStore.totalRecords} 盘已收录` : '暂无棋谱' }}</h3>
+              <h3 v-if="recordsStore.loaded">
+                {{ recordsStore.totalRecords > 0 ? `${recordsStore.totalRecords} 盘已收录` : '暂无棋谱' }}
+              </h3>
+              <h3 v-else>等待后端数据</h3>
             </div>
           </div>
         </article>

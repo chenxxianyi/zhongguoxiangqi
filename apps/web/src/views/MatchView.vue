@@ -7,6 +7,11 @@ import XiangqiBoard from '@/components/board/XiangqiBoard.vue'
 import { useMatchStore } from '@/stores/match'
 import { useUiStore } from '@/stores/ui'
 import { formatMoveList } from '@/utils/moveNotation'
+import {
+  getPlayerResult,
+  getPlayerResultClass,
+  getPlayerResultLabel,
+} from '@/utils/matchResult'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +20,8 @@ const ui = useUiStore()
 
 const tab = ref<'moves' | 'info'>('moves')
 const resignOpen = ref(false)
+const loading = ref(true)
+const loadError = ref<string | null>(null)
 
 // ── 加载对局 ──
 onMounted(async () => {
@@ -26,8 +33,9 @@ onMounted(async () => {
   try {
     await match.loadMatch(id)
   } catch {
-    ui.showToast('无法加载对局，请确认对局 ID 是否正确')
-    await router.push('/')
+    loadError.value = '无法从后端加载该对局'
+  } finally {
+    loading.value = false
   }
 })
 
@@ -51,12 +59,9 @@ watch(
   () => match.isFinished,
   (finished) => {
     if (finished) {
-      const labels: Record<string, string> = {
-        red_win: '红方胜',
-        black_win: '黑方胜',
-        draw: '和棋',
-      }
-      ui.showToast(`对局结束：${labels[match.outcome] ?? match.outcome}`)
+      const result = getPlayerResult(match.outcome, match.playerColor)
+      const label = getPlayerResultLabel(result)
+      ui.showToast(`对局结束：${result === 'draw' ? '和棋' : `你${label}`}`)
     }
   },
 )
@@ -83,17 +88,23 @@ const opponentLabel = computed(() => {
   if (match.engine) {
     return `${match.engine} · ${match.difficulty} 级`
   }
-  return `棋境 AI · ${match.difficulty} 级`
+  return '引擎信息未提供'
 })
 
 const aiModeLabel = computed(() =>
   ({ standard: '标准引擎', library: '棋谱库优先', style: '棋风模仿' })[match.aiMode],
 )
+const playerResult = computed(() => getPlayerResult(match.outcome, match.playerColor))
 </script>
 
 <template>
   <section class="page active match-page">
-    <div class="match-shell">
+    <div v-if="loading" class="loading-state">正在读取后端对局…</div>
+    <div v-else-if="loadError" class="error-state">
+      <p>{{ loadError }}</p>
+      <button class="secondary-button" @click="router.push('/history')">返回历史对局</button>
+    </div>
+    <div v-else class="match-shell">
       <div class="match-board-column">
         <!-- 对手栏 -->
         <div class="player-bar opponent">
@@ -169,17 +180,13 @@ const aiModeLabel = computed(() =>
             <div><dt>当前行棋方</dt><dd>{{ match.sideToMove === 'red' ? '红方' : '黑方' }}</dd></div>
             <div><dt>执色</dt><dd>{{ match.playerColor === 'red' ? '红方（先手）' : '黑方（后手）' }}</dd></div>
             <div><dt>AI 模式</dt><dd>{{ aiModeLabel }}</dd></div>
-            <div><dt>引擎</dt><dd>{{ match.engine || '内置引擎' }}</dd></div>
+            <div><dt>引擎</dt><dd>{{ match.engine || '未提供' }}</dd></div>
             <div><dt>AI 思考中</dt><dd>{{ match.thinking ? '是' : '否' }}</dd></div>
             <div v-if="match.isFinished">
               <dt>结果</dt>
               <dd>
-                <span class="result-badge" :class="{
-                  win: match.outcome === 'red_win' && match.playerColor === 'red' || match.outcome === 'black_win' && match.playerColor === 'black',
-                  loss: match.outcome === 'red_win' && match.playerColor === 'black' || match.outcome === 'black_win' && match.playerColor === 'red',
-                  draw: match.outcome === 'draw',
-                }">
-                  {{ match.outcome === 'red_win' ? '红胜' : match.outcome === 'black_win' ? '黑胜' : '和棋' }}
+                <span class="result-badge" :class="getPlayerResultClass(playerResult)">
+                  {{ getPlayerResultLabel(playerResult) }}
                 </span>
               </dd>
             </div>

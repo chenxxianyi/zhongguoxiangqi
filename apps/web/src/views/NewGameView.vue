@@ -27,10 +27,15 @@ function resolveColor(side: SideChoice): Color {
 }
 
 async function start() {
+  const profile = setup.profile
+  if (!profile) {
+    ui.showToast('难度配置尚未从后端加载完成')
+    return
+  }
   const color = resolveColor(setup.side)
-  ui.showToast(`正在创建对局：${color === 'red' ? '执红' : '执黑'}，${setup.modeLabel}，AI 难度 ${setup.difficulty} 级`)
+  ui.showToast(`正在创建对局：${color === 'red' ? '执红' : '执黑'}，${setup.modeLabel}，AI 难度 ${profile.level} 级`)
   try {
-    await match.createMatch(color, setup.difficulty, setup.mode, true)
+    await match.createMatch(color, profile.level, setup.mode, true)
   } catch {
     ui.showToast('创建对局失败，请确认后端服务已启动')
   }
@@ -68,14 +73,30 @@ async function start() {
 
         <section class="setup-section" aria-labelledby="difficulty-title">
           <div class="setup-title"><span>02</span><div><h3 id="difficulty-title">选择难度</h3><p>从入门到大师，搜索时间、搜索深度和节点预算逐级变化。</p></div></div>
-          <div class="difficulty-selector">
-            <div class="difficulty-labels"><span>入门</span><span>休闲</span><span>进阶</span><span>高手</span><span>大师</span></div>
-            <input v-model.number="setup.difficulty" type="range" min="1" max="10" :aria-label="`AI 难度，当前 ${setup.difficulty} 级`">
+          <div v-if="setup.loading" class="loading-state">正在读取后端难度配置…</div>
+          <div v-else-if="setup.error" class="error-state">
+            <p>{{ setup.error }}</p>
+            <button class="secondary-button small" @click="setup.fetchProfiles">重新加载</button>
+          </div>
+          <div v-else-if="setup.profile" class="difficulty-selector">
+            <input
+              v-model.number="setup.difficulty"
+              type="range"
+              :min="setup.minDifficulty"
+              :max="setup.maxDifficulty"
+              :aria-label="`AI 难度，当前 ${setup.difficulty} 级`"
+            >
             <div class="difficulty-numbers" aria-hidden="true">
-              <span v-for="level in 10" :key="level" :class="{ active: setup.difficulty === level }">{{ level }}</span>
+              <span
+                v-for="item in setup.profiles"
+                :key="item.level"
+                :class="{ active: setup.difficulty === item.level }"
+              >
+                {{ item.level }}
+              </span>
             </div>
           </div>
-          <div class="difficulty-detail">
+          <div v-if="setup.profile" class="difficulty-detail">
             <div>
               <span class="difficulty-level">第 {{ setup.difficulty }} 级</span>
               <h4>{{ setup.profile.name }}</h4>
@@ -112,15 +133,16 @@ async function start() {
         <div class="summary-versus">
           <div><span class="piece-choice red-piece">帅</span><strong>你</strong><small>{{ setup.sideLabel }}</small></div>
           <span>对</span>
-          <div><span class="piece-choice black-piece">将</span><strong>棋境 AI</strong><small>{{ setup.profile.name }}</small></div>
+          <div><span class="piece-choice black-piece">将</span><strong>棋境 AI</strong><small>{{ setup.profile?.name || '等待后端配置' }}</small></div>
         </div>
-        <div class="summary-lines">
+        <div v-if="setup.profile" class="summary-lines">
           <div><span>AI 模式</span><strong>{{ setup.modeLabel }}</strong></div>
           <div><span>搜索深度</span><strong>{{ setup.profile.maxDepth }} 层</strong></div>
-          <div><span>悔棋</span><strong>允许 3 次</strong></div>
+          <div><span>悔棋</span><strong>本局允许</strong></div>
           <div><span>思考时间</span><strong>{{ setup.profile.moveTimeMs }}ms</strong></div>
         </div>
-        <button class="primary-button full large" @click="start"><AppIcon name="play" />开始对局</button>
+        <div v-else class="notice"><AppIcon name="info" /><p>后端难度配置可用后才能创建对局。</p></div>
+        <button class="primary-button full large" :disabled="!setup.profile || setup.loading" @click="start"><AppIcon name="play" />开始对局</button>
       </aside>
     </div>
   </section>

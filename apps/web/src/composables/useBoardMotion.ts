@@ -1,0 +1,413 @@
+import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import type { MoveRecord } from '@/api/contracts'
+import type { BoardPiece, BoardSquare } from '@/types/xiangqi'
+import { getPiecesFromFEN } from '@/utils/board'
+
+export type PieceMotion = 'idle' | 'moving' | 'captured' | 'restored'
+
+export interface MotionBoardPiece extends BoardPiece {
+  renderId: string
+  motion: PieceMotion
+  motionDurationMs: number
+}
+
+export interface BoardArrivalMarker extends BoardSquare {
+  key: number
+}
+
+interface BoardMotionOptions {
+  fen: Ref<string>
+  moves: Ref<MoveRecord[]>
+  matchId: Ref<string | null>
+}
+
+interface QueuedMove {
+  direction: 'forward' | 'reverse'
+  record: MoveRecord
+}
+
+interface ParsedMove {
+  from: BoardSquare
+  to: BoardSquare
+}
+
+const MOVE_NEAR_MS = 210
+const MOVE_FAR_MS = 280
+const AI_MOVE_EXTRA_MS = 20
+const UNDO_NEAR_MS = 180
+const UNDO_FAR_MS = 220
+const ARRIVAL_MARKER_MS = 440
+
+function parseMove(move: string): ParsedMove | null {
+  if (!/^[a-i][0-9][a-i][0-9]$/.test(move)) return null
+
+  return {
+    from: {
+      file: move.charCodeAt(0) - 97,
+      rank: 9 - Number.parseInt(move[1]!, 10),
+    },
+    to: {
+      file: move.charCodeAt(2) - 97,
+      rank: 9 - Number.parseInt(move[3]!, 10),
+    },
+  }
+}
+
+function sameSquare(piece: BoardSquare, square: BoardSquare) {
+  return piece.file === square.file && piece.rank === square.rank
+}
+
+function samePiece(left: BoardPiece, right: BoardPiece) {
+  return left.color === right.color && left.name === right.name
+}
+
+function sameMove(left: MoveRecord, right: MoveRecord) {
+  return left.ply === right.ply
+    && left.move === right.move
+    && left.fenBefore === right.fenBefore
+    && left.fenAfter === right.fenAfter
+}
+
+function isMovePrefix(prefix: MoveRecord[], moves: MoveRecord[]) {
+  return prefix.length <= moves.length && prefix.every((move, index) => sameMove(move, moves[index]!))
+}
+
+function dedupeMoves(moves: MoveRecord[]) {
+  const byPly = new Map<number, MoveRecord>()
+  for (const move of moves) byPly.set(move.ply, move)
+  return [...byPly.values()].sort((left, right) => left.ply - right.ply)
+}
+
+function targetOf(move: MoveRecord | undefined) {
+  if (!move) return null
+  return parseMove(move.move)?.to ?? null
+}
+
+function boardSignature(pieces: BoardPiece[]) {
+  return pieces
+    .map((piece) => `${piece.file},${piece.rank},${piece.color},${piece.name}`)
+    .sort()
+    .join('|')
+}
+
+function moveDuration(record: MoveRecord, parsed: ParsedMove, reverse: boolean) {
+  const fileDistance = parsed.to.file - parsed.from.file
+  const rankDistance = parsed.to.rank - parsed.from.rank
+  const distance = Math.min(8, Math.hypot(fileDistance, rankDistance))
+  const progress = Math.max(0, (distance - 1) / 7)
+
+  if (reverse) {
+    return Math.round(UNDO_NEAR_MS + (UNDO_FAR_MS - UNDO_NEAR_MS) * progress)
+  }
+
+  const actorOffset = record.actor === 'ai' ? AI_MOVE_EXTRA_MS : 0
+  return Math.min(
+    MOVE_FAR_MS + AI_MOVE_EXTRA_MS,
+    Math.round(MOVE_NEAR_MS + (MOVE_FAR_MS - MOVE_NEAR_MS) * progress + actorOffset),
+  )
+}
+
+export function useBoardMotion(options: BoardMotionOptions) {
+  let renderSequence = 0
+  let markerSequence = 0
+  let generation = 0
+  let processing = false
+  let observedMatchId = options.matchId.value
+  let observedMoves = dedupeMoves(options.moves.value)
+  let latestFen = options.fen.value
+  let latestMoves = observedMoves
+  let markerTimer: ReturnType<typeof setTimeout> | null = null
+
+  const queue: QueuedMove[] = []
+  const pendingWaits = new Map<ReturnType<typeof setTimeout>, () => void>()
+  const pieces = ref<MotionBoardPiece[]>([])
+  const isAnimating = ref(false)
+  const lastSquare = ref<BoardSquare | null>(targetOf(latestMoves.at(-1)))
+  const arrivalMarker = ref<BoardArrivalMarker | null>(null)
+
+  const reducedMotion = ref(false)
+  const motionQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null
+
+  if (motionQuery) {
+    reducedMotion.value = motionQuery.matches
+    motionQuery.addEventListener?.('change', handleMotionPreference)
+  }
+
+  function handleMotionPreference(event: MediaQueryListEvent) {
+    reducedMotion.value = event.matches
+  }
+
+  function freshPiece(piece: BoardPiece, motion: PieceMotion = 'idle'): MotionBoardPiece {
+    renderSequence += 1
+    return {
+      ...piece,
+      renderId: `board-piece-${renderSequence}`,
+      motion,
+      motionDurationMs: 0,
+    }
+  }
+
+  function activePieces() {
+    return pieces.value.filter((piece) => piece.motion !== 'captured')
+  }
+
+  function matchesFen(fen: string) {
+    return boardSignature(activePieces()) === boardSignature(getPiecesFromFEN(fen))
+  }
+
+  function syncToFen(fen: string) {
+    const current = activePieces()
+    const target = getPiecesFromFEN(fen)
+
+    pieces.value = target.map((piece) => {
+      const existing = current.find((candidate) =>
+        sameSquare(candidate, piece) && samePiece(candidate, piece),
+      )
+      return existing
+        ? { ...existing, ...piece, motion: 'idle', motionDurationMs: 0 }
+        : freshPiece(piece)
+    })
+  }
+
+  function settlePieces(nextPieces: MotionBoardPiece[]) {
+    pieces.value = nextPieces
+      .filter((piece) => piece.motion !== 'captured')
+      .map((piece) => ({ ...piece, motion: 'idle', motionDurationMs: 0 }))
+  }
+
+  function wait(durationMs: number) {
+    if (durationMs <= 0) return Promise.resolve()
+
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        pendingWaits.delete(timer)
+        resolve()
+      }, durationMs)
+      pendingWaits.set(timer, resolve)
+    })
+  }
+
+  function flashArrival(square: BoardSquare) {
+    if (markerTimer) clearTimeout(markerTimer)
+    if (reducedMotion.value) {
+      arrivalMarker.value = null
+      return
+    }
+
+    markerSequence += 1
+    const marker = { ...square, key: markerSequence }
+    arrivalMarker.value = marker
+    markerTimer = setTimeout(() => {
+      if (arrivalMarker.value?.key === marker.key) arrivalMarker.value = null
+      markerTimer = null
+    }, ARRIVAL_MARKER_MS)
+  }
+
+  function buildForwardPieces(record: MoveRecord, parsed: ParsedMove, durationMs: number) {
+    if (!matchesFen(record.fenBefore)) syncToFen(record.fenBefore)
+
+    const current = activePieces()
+    const movingPiece = current.find((piece) => sameSquare(piece, parsed.from))
+    if (!movingPiece) return null
+
+    const capturedPiece = current.find((piece) =>
+      piece.renderId !== movingPiece.renderId && sameSquare(piece, parsed.to),
+    )
+    const target = getPiecesFromFEN(record.fenAfter)
+
+    const next = target.map((piece) => {
+      if (sameSquare(piece, parsed.to) && samePiece(piece, movingPiece)) {
+        return {
+          ...movingPiece,
+          ...piece,
+          motion: 'moving' as const,
+          motionDurationMs: durationMs,
+        }
+      }
+
+      const existing = current.find((candidate) =>
+        candidate.renderId !== movingPiece.renderId
+        && candidate.renderId !== capturedPiece?.renderId
+        && sameSquare(candidate, piece)
+        && samePiece(candidate, piece),
+      )
+      return existing
+        ? { ...existing, ...piece, motion: 'idle' as const, motionDurationMs: 0 }
+        : freshPiece(piece)
+    })
+
+    if (capturedPiece) {
+      next.push({
+        ...capturedPiece,
+        motion: 'captured',
+        motionDurationMs: durationMs,
+      })
+    }
+
+    return next
+  }
+
+  function buildReversePieces(record: MoveRecord, parsed: ParsedMove, durationMs: number) {
+    if (!matchesFen(record.fenAfter)) syncToFen(record.fenAfter)
+
+    const current = activePieces()
+    const movingPiece = current.find((piece) => sameSquare(piece, parsed.to))
+    if (!movingPiece) return null
+
+    const target = getPiecesFromFEN(record.fenBefore)
+    return target.map((piece) => {
+      if (sameSquare(piece, parsed.from) && samePiece(piece, movingPiece)) {
+        return {
+          ...movingPiece,
+          ...piece,
+          motion: 'moving' as const,
+          motionDurationMs: durationMs,
+        }
+      }
+
+      const existing = current.find((candidate) =>
+        candidate.renderId !== movingPiece.renderId
+        && sameSquare(candidate, piece)
+        && samePiece(candidate, piece),
+      )
+      return existing
+        ? { ...existing, ...piece, motion: 'idle' as const, motionDurationMs: 0 }
+        : freshPiece(piece, 'restored')
+    })
+  }
+
+  async function animateMove(queuedMove: QueuedMove, activeGeneration: number) {
+    const parsed = parseMove(queuedMove.record.move)
+    if (!parsed) {
+      syncToFen(
+        queuedMove.direction === 'forward'
+          ? queuedMove.record.fenAfter
+          : queuedMove.record.fenBefore,
+      )
+      return
+    }
+
+    const reverse = queuedMove.direction === 'reverse'
+    const durationMs = reducedMotion.value ? 0 : moveDuration(queuedMove.record, parsed, reverse)
+    const nextPieces = reverse
+      ? buildReversePieces(queuedMove.record, parsed, durationMs)
+      : buildForwardPieces(queuedMove.record, parsed, durationMs)
+
+    if (!nextPieces) {
+      syncToFen(reverse ? queuedMove.record.fenBefore : queuedMove.record.fenAfter)
+      return
+    }
+
+    pieces.value = nextPieces
+    await wait(durationMs)
+    if (activeGeneration !== generation) return
+
+    settlePieces(nextPieces)
+    const destination = reverse ? parsed.from : parsed.to
+    lastSquare.value = destination
+    flashArrival(destination)
+  }
+
+  async function processQueue() {
+    if (processing) return
+
+    processing = true
+    isAnimating.value = true
+    const activeGeneration = generation
+
+    while (queue.length > 0 && activeGeneration === generation) {
+      const queuedMove = queue.shift()
+      if (queuedMove) await animateMove(queuedMove, activeGeneration)
+    }
+
+    if (activeGeneration === generation) {
+      if (!matchesFen(latestFen)) syncToFen(latestFen)
+      lastSquare.value = targetOf(latestMoves.at(-1))
+      processing = false
+      isAnimating.value = false
+    }
+  }
+
+  function enqueue(queuedMoves: QueuedMove[]) {
+    queue.push(...queuedMoves)
+    void processQueue()
+  }
+
+  function cancelAnimations() {
+    generation += 1
+    queue.length = 0
+    for (const [timer, resolve] of pendingWaits) {
+      clearTimeout(timer)
+      resolve()
+    }
+    pendingWaits.clear()
+    if (markerTimer) clearTimeout(markerTimer)
+    markerTimer = null
+    arrivalMarker.value = null
+    processing = false
+    isAnimating.value = false
+  }
+
+  function resetBoard(fen: string, moves: MoveRecord[]) {
+    cancelAnimations()
+    syncToFen(fen)
+    lastSquare.value = targetOf(moves.at(-1))
+  }
+
+  syncToFen(options.fen.value)
+
+  watch(
+    [options.matchId, options.fen, options.moves],
+    ([nextMatchId, nextFen, rawNextMoves]) => {
+      const nextMoves = dedupeMoves(rawNextMoves)
+      latestFen = nextFen
+      latestMoves = nextMoves
+
+      if (nextMatchId !== observedMatchId) {
+        observedMatchId = nextMatchId
+        observedMoves = nextMoves
+        resetBoard(nextFen, nextMoves)
+        return
+      }
+
+      if (isMovePrefix(observedMoves, nextMoves) && nextMoves.length > observedMoves.length) {
+        const added = nextMoves.slice(observedMoves.length)
+        observedMoves = nextMoves
+        enqueue(added.map((record) => ({ direction: 'forward', record })))
+        return
+      }
+
+      if (isMovePrefix(nextMoves, observedMoves) && nextMoves.length < observedMoves.length) {
+        const removed = observedMoves.slice(nextMoves.length).reverse()
+        observedMoves = nextMoves
+        enqueue(removed.map((record) => ({ direction: 'reverse', record })))
+        return
+      }
+
+      const historyUnchanged = observedMoves.length === nextMoves.length
+        && observedMoves.every((move, index) => sameMove(move, nextMoves[index]!))
+      observedMoves = nextMoves
+
+      if (!historyUnchanged && !processing) {
+        resetBoard(nextFen, nextMoves)
+      } else if (historyUnchanged && !processing && !matchesFen(nextFen)) {
+        syncToFen(nextFen)
+      }
+    },
+  )
+
+  onScopeDispose(() => {
+    cancelAnimations()
+    motionQuery?.removeEventListener?.('change', handleMotionPreference)
+  })
+
+  return {
+    pieces,
+    isAnimating,
+    lastSquare,
+    arrivalMarker,
+    reducedMotion,
+  }
+}

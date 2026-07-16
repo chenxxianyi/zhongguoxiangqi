@@ -1,7 +1,12 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { apiRequest } from '@/api/client'
-import type { GameRecord, ImportBatch } from '@/api/contracts'
+import {
+  deleteRecord as requestDeleteRecord,
+  getRecord,
+  importRecordFile,
+  listRecords,
+} from '@/api/records'
+import type { GameRecord } from '@/api/contracts'
 
 export const useRecordsStore = defineStore('records', () => {
   const records = ref<GameRecord[]>([])
@@ -10,78 +15,71 @@ export const useRecordsStore = defineStore('records', () => {
   const importTitle = ref('')
   const totalRecords = ref(0)
   const loaded = ref(false)
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
-  // ── 获取棋谱列表 ──
   async function fetchRecords() {
+    loading.value = true
+    error.value = null
     try {
-      const result = await apiRequest<{ items: GameRecord[] }>('/records')
-      records.value = result.items
-      totalRecords.value = result.items.length
+      const items = await listRecords()
+      records.value = items
+      totalRecords.value = items.length
       loaded.value = true
     } catch {
-      console.warn('无法获取棋谱列表')
+      error.value = '无法从后端获取棋谱列表'
+    } finally {
+      loading.value = false
     }
   }
 
-  // ── 导入棋谱 ──
-  async function importRecords(files: File[], collectionName?: string) {
-    if (files.length === 0) return
+  async function importRecords(files: File[], collectionName?: string): Promise<number> {
+    if (files.length === 0) return 0
     importing.value = true
     importProgress.value = 0
     importTitle.value = '正在导入…'
+    error.value = null
 
     let imported = 0
+    let failed = 0
     for (let i = 0; i < files.length; i++) {
       const file = files[i]!
       importTitle.value = `正在处理：${file.name}`
 
       try {
-        const formData = new FormData()
-        formData.append('file', file)
-        if (collectionName) formData.append('name', collectionName)
-        if (file.name.endsWith('.pgn')) formData.append('format', 'pgn')
-        else if (file.name.endsWith('.json')) formData.append('format', 'json')
-        else formData.append('format', 'iccs')
-
-        const batch = await apiRequest<ImportBatch>('/records/imports', {
-          method: 'POST',
-          headers: {}, // 让浏览器自动设置 multipart Content-Type
-          body: formData,
-        })
+        const batch = await importRecordFile(file, collectionName)
         imported += batch.importedGames
+        failed += batch.failedGames
         importProgress.value = Math.round(((i + 1) / files.length) * 100)
       } catch {
-        // 单个文件失败不影响后续
-        console.warn(`导入失败：${file.name}`)
+        failed += 1
       }
     }
 
-    importTitle.value = `${imported} 盘棋谱已导入`
+    importTitle.value = failed > 0
+      ? `导入 ${imported} 盘，失败 ${failed} 个文件`
+      : `${imported} 盘棋谱已导入`
     importing.value = false
     importProgress.value = 100
 
-    // 刷新列表
     await fetchRecords()
     return imported
   }
 
-  // ── 删除棋谱 ──
   async function deleteRecord(id: string) {
-    await apiRequest(`/records/${id}`, { method: 'DELETE' })
+    await requestDeleteRecord(id)
     records.value = records.value.filter((r) => r.id !== id)
     totalRecords.value = records.value.length
   }
 
-  // ── 获取单条棋谱 ──
   async function fetchRecord(id: string): Promise<GameRecord | null> {
     try {
-      return await apiRequest<GameRecord>(`/records/${id}`)
+      return await getRecord(id)
     } catch {
       return null
     }
   }
 
-  // ── 重置 ──
   function reset() {
     records.value = []
     importing.value = false
@@ -89,10 +87,12 @@ export const useRecordsStore = defineStore('records', () => {
     importTitle.value = ''
     totalRecords.value = 0
     loaded.value = false
+    loading.value = false
+    error.value = null
   }
 
   return {
-    records, importing, importProgress, importTitle, totalRecords, loaded,
+    records, importing, importProgress, importTitle, totalRecords, loaded, loading, error,
     fetchRecords, importRecords, deleteRecord, fetchRecord, reset,
   }
 })

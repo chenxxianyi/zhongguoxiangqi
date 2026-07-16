@@ -45,6 +45,14 @@ func TestMatchHTTPFlowAndStructuredError(t *testing.T) {
 	if created.Version != 1 || created.SideToMove != "red" || created.AIMode != game.AIModeLibrary {
 		t.Fatalf("created: %+v", created)
 	}
+	legalMoves := requestJSON[game.LegalMovesResponse](
+		t, http.MethodGet, api.URL+"/api/v1/matches/"+created.ID+"/legal-moves?from=a3",
+		nil, http.StatusOK,
+	)
+	if legalMoves.MatchVersion != created.Version || len(legalMoves.Moves) != 1 ||
+		legalMoves.Moves[0].Move != "a3a4" {
+		t.Fatalf("legal moves: %+v", legalMoves)
+	}
 	moved := requestJSON[game.Snapshot](t, http.MethodPost, api.URL+"/api/v1/matches/"+created.ID+"/moves",
 		map[string]any{"move": "a3a4", "expectedMatchVersion": 1}, http.StatusAccepted)
 	if len(moved.Moves) != 1 || moved.Status != game.StatusAIThinking {
@@ -69,7 +77,12 @@ func TestHealthAndRecordImport(t *testing.T) {
 	)
 	api := httptest.NewServer(server.Handler())
 	defer api.Close()
-	requestJSON[map[string]any](t, http.MethodGet, api.URL+"/health/ready", nil, http.StatusOK)
+	readiness := requestJSON[struct {
+		Dependencies map[string]string `json:"dependencies"`
+	}](t, http.MethodGet, api.URL+"/health/ready", nil, http.StatusOK)
+	if readiness.Dependencies["authoritativeStore"] != "memory" {
+		t.Fatalf("authoritative store = %q, want memory", readiness.Dependencies["authoritativeStore"])
+	}
 	batch := requestJSON[records.ImportBatch](t, http.MethodPost, api.URL+"/api/v1/records/imports",
 		map[string]any{"name": "demo", "format": "iccs", "content": "a3a4 a6a5"}, http.StatusCreated)
 	if batch.ImportedGames != 1 {

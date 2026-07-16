@@ -17,7 +17,7 @@ import (
 )
 
 type Service struct {
-	repository  *MemoryRepository
+	repository  Repository
 	engine      engine.Engine
 	events      *EventBus
 	moveTimeCap time.Duration
@@ -48,11 +48,15 @@ type VersionRequest struct {
 	ExpectedMatchVersion int64 `json:"expectedMatchVersion"`
 }
 
-func NewService(repository *MemoryRepository, searchEngine engine.Engine, events *EventBus, moveTimeCap time.Duration) *Service {
+func NewService(repository Repository, searchEngine engine.Engine, events *EventBus, moveTimeCap time.Duration) *Service {
 	return &Service{
 		repository: repository, engine: searchEngine, events: events,
 		moveTimeCap: moveTimeCap, searches: make(map[string]context.CancelFunc),
 	}
+}
+
+func (s *Service) AuthoritativeStore() string {
+	return s.repository.Name()
 }
 
 func (s *Service) SetBookAdvisor(book BookAdvisor) {
@@ -120,6 +124,42 @@ func (s *Service) Get(id string) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	return match.Snapshot(), nil
+}
+
+func (s *Service) LegalMoves(id, from string) (LegalMovesResponse, error) {
+	match, err := s.repository.Get(id)
+	if err != nil {
+		return LegalMovesResponse{}, err
+	}
+	response := LegalMovesResponse{
+		MatchID: match.ID, MatchVersion: match.Version,
+		SideToMove: match.SideToMove.String(), Moves: []LegalMove{},
+	}
+	if match.Status != StatusPlayerTurn || match.SideToMove != match.PlayerColor {
+		return response, nil
+	}
+	position, err := xiangqi.ParseFEN(match.FEN)
+	if err != nil {
+		return LegalMovesResponse{}, err
+	}
+	var fromSquare *xiangqi.Square
+	if strings.TrimSpace(from) != "" {
+		square, err := xiangqi.ParseSquare(from)
+		if err != nil {
+			return LegalMovesResponse{}, fmt.Errorf("invalid from square: %w", err)
+		}
+		fromSquare = &square
+	}
+	for _, move := range position.LegalMoves() {
+		if fromSquare != nil && move.From != *fromSquare {
+			continue
+		}
+		response.Moves = append(response.Moves, LegalMove{
+			Move: move.ICCS(), From: move.From.ICCS(), To: move.To.ICCS(),
+			Capture: !position.PieceAt(move.To).Empty(),
+		})
+	}
+	return response, nil
 }
 
 func (s *Service) List() []Snapshot {

@@ -10,7 +10,8 @@ export const useUiStore = defineStore('ui', () => {
   const toasts = ref<Array<{ id: number; message: string }>>([])
   let toastId = 0
 
-  const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  const colorSchemeMedia = window.matchMedia?.('(prefers-color-scheme: dark)')
+  const prefersDark = () => colorSchemeMedia?.matches ?? false
   const resolvedTheme = computed(() => theme.value === 'system' ? (prefersDark() ? 'dark' : 'light') : theme.value)
 
   function applyTheme() {
@@ -41,7 +42,7 @@ export const useUiStore = defineStore('ui', () => {
     applyTheme()
   }, { immediate: true })
 
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+  colorSchemeMedia?.addEventListener?.('change', () => {
     if (theme.value === 'system') applyTheme()
   })
 

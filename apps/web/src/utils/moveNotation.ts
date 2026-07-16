@@ -91,26 +91,29 @@ export function iccsToBrief(iccsMove: string): string {
  * 用于对局面板中的着法列表显示。
  */
 export function formatMoveList(
-  moves: Array<{ ply: number; move: string; side: string; actor: string }>,
-  fen?: string,
+  moves: Array<{
+    ply: number
+    move: string
+    side: string
+    actor: string
+    fenBefore?: string
+  }>,
+  fallbackFen?: string,
 ): Array<[string, string, string]> {
   const result: Array<[string, string, string]> = []
-  let currentFen = fen
 
   for (let i = 0; i < moves.length; i += 2) {
     const num = `${Math.floor(i / 2) + 1}.`
-    const redMove = moves[i] ? iccsToDisplay(moves[i]!.move, currentFen, 'red') : ''
-    const blackMove = moves[i + 1] ? iccsToDisplay(moves[i + 1]!.move, currentFen, 'black') : ''
+    const redRecord = moves[i]
+    const blackRecord = moves[i + 1]
+    const redMove = redRecord
+      ? iccsToDisplay(redRecord.move, redRecord.fenBefore || fallbackFen, 'red')
+      : ''
+    const blackMove = blackRecord
+      ? iccsToDisplay(blackRecord.move, blackRecord.fenBefore || fallbackFen, 'black')
+      : ''
 
     result.push([num, redMove, blackMove])
-
-    // 更新 FEN（如果提供了棋盘信息）
-    if (currentFen && moves[i]?.fenAfter) {
-      currentFen = moves[i]!.fenAfter
-    }
-    if (currentFen && moves[i + 1]?.fenAfter) {
-      currentFen = moves[i + 1]!.fenAfter
-    }
   }
 
   return result

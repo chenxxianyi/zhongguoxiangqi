@@ -4,11 +4,26 @@ import (
 	"sync"
 )
 
+// Repository defines the authoritative persistence boundary for matches.
+// Application services depend on this contract rather than a concrete storage
+// implementation so memory and durable adapters can be selected at startup.
+type Repository interface {
+	Name() string
+	Create(match Match) error
+	Get(id string) (Match, error)
+	List() []Match
+	Update(id string, expectedVersion int64, update func(*Match) error) (Match, error)
+	Idempotency(route, key, digest string) (Match, bool, error)
+	SaveIdempotency(route, key, digest string, match Match)
+}
+
 type MemoryRepository struct {
 	mu          sync.RWMutex
 	matches     map[string]*Match
 	idempotency map[string]idempotentResult
 }
+
+var _ Repository = (*MemoryRepository)(nil)
 
 type idempotentResult struct {
 	Digest string
@@ -20,6 +35,8 @@ func NewMemoryRepository() *MemoryRepository {
 		matches: make(map[string]*Match), idempotency: make(map[string]idempotentResult),
 	}
 }
+
+func (r *MemoryRepository) Name() string { return "memory" }
 
 func (r *MemoryRepository) Create(match Match) error {
 	r.mu.Lock()

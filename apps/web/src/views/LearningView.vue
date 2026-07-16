@@ -11,15 +11,17 @@ const learning = useLearningStore()
 const ui = useUiStore()
 
 onMounted(() => {
-  if (!learning.loaded) learning.fetchVersions()
+  if (!learning.loaded) void learning.fetchVersions()
 })
 
 async function handleCreate() {
   await learning.createJob(versionName.value || undefined)
-  modalOpen.value = false
-  versionName.value = ''
   if (learning.completed) {
+    modalOpen.value = false
+    versionName.value = ''
     ui.showToast('学习版本构建完成')
+  } else if (learning.jobError) {
+    ui.showToast(learning.jobError)
   }
 }
 
@@ -59,20 +61,23 @@ function statusClass(status: string): string {
     <div class="learning-hero">
       <div>
         <span class="section-kicker">当前启用版本</span>
-        <h2>{{ learning.activeVersion?.name || '暂无学习版本' }}</h2>
-        <p v-if="learning.activeVersion">
+        <h2 v-if="learning.versionsLoading">正在读取后端版本…</h2>
+        <h2 v-else-if="learning.versionsError">学习服务不可用</h2>
+        <h2 v-else>{{ learning.activeVersion?.name || '暂无学习版本' }}</h2>
+        <p v-if="learning.versionsError">{{ learning.versionsError }}</p>
+        <p v-else-if="learning.activeVersion">
           基于 {{ learning.activeVersion.quality.validRecords }} 盘有效棋谱构建，包含 {{ learning.activeVersion.quality.coveredPositions }} 个可查询局面。
           AI 会在样本可信时参考学习库。
         </p>
-        <p v-else>导入棋谱后，可在此创建学习版本。</p>
+        <p v-else-if="!learning.versionsLoading">导入棋谱后，可在此创建学习版本。</p>
         <div v-if="learning.activeVersion" class="inline-meta">
           <span>发布于 {{ formatDate(learning.activeVersion.createdAt) }}</span>
           <span>算法 {{ learning.activeVersion.algorithm }}</span>
         </div>
       </div>
       <div class="learning-actions">
-        <button class="secondary-button" @click="learning.fetchVersions()">刷新</button>
-        <button class="primary-button" @click="modalOpen = true">
+        <button class="secondary-button" :disabled="learning.versionsLoading" @click="learning.fetchVersions()">刷新</button>
+        <button class="primary-button" :disabled="learning.versionsLoading" @click="modalOpen = true">
           <AppIcon name="spark" />创建新版本
         </button>
       </div>
@@ -110,7 +115,12 @@ function statusClass(status: string): string {
           <h3>所有构建版本</h3>
         </div>
       </div>
-      <div v-if="learning.versions.length === 0" class="empty-state">
+      <div v-if="learning.versionsLoading" class="loading-state">正在读取后端学习版本…</div>
+      <div v-else-if="learning.versionsError" class="error-state">
+        <p>{{ learning.versionsError }}</p>
+        <button class="secondary-button small" @click="learning.fetchVersions">重新加载</button>
+      </div>
+      <div v-else-if="learning.versions.length === 0" class="empty-state">
         暂无学习版本。请先导入棋谱，然后创建新版本。
       </div>
       <div
@@ -150,20 +160,21 @@ function statusClass(status: string): string {
         <input v-model="versionName" type="text" placeholder="例如：岭南名局精选 v4" />
       </div>
 
-      <div v-if="learning.running || learning.completed" class="fake-job">
+      <div v-if="learning.currentJob" class="job-progress">
         <div>
           <span>{{ learning.stage }}</span>
           <strong>{{ learning.progress }}%</strong>
         </div>
         <i><b :style="{ width: `${learning.progress}%` }" /></i>
       </div>
+      <div v-if="learning.jobError" class="error-state">{{ learning.jobError }}</div>
 
       <button
         class="primary-button full"
         :disabled="learning.running"
         @click="handleCreate"
       >
-        {{ learning.completed ? '构建完成' : learning.running ? '构建中…' : '开始构建' }}
+        {{ learning.running ? '构建中…' : '开始构建' }}
       </button>
     </AppModal>
   </section>
