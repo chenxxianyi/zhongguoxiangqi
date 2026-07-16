@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useGameSetupStore } from '@/stores/gameSetup'
 import { useMatchStore } from '@/stores/match'
@@ -9,7 +8,6 @@ import type { AiMode, Color, SideChoice } from '@/types/xiangqi'
 const setup = useGameSetupStore()
 const match = useMatchStore()
 const ui = useUiStore()
-const router = useRouter()
 
 const sideOptions: Array<{ value: SideChoice; title: string; note: string; piece: string }> = [
   { value: 'red', title: '执红', note: '先手行棋', piece: '帅' },
@@ -30,9 +28,9 @@ function resolveColor(side: SideChoice): Color {
 
 async function start() {
   const color = resolveColor(setup.side)
-  ui.showToast(`正在创建对局：${color === 'red' ? '执红' : '执黑'}，AI 难度 ${setup.difficulty} 级`)
+  ui.showToast(`正在创建对局：${color === 'red' ? '执红' : '执黑'}，${setup.modeLabel}，AI 难度 ${setup.difficulty} 级`)
   try {
-    await match.createMatch(color, setup.difficulty, true)
+    await match.createMatch(color, setup.difficulty, setup.mode, true)
   } catch {
     ui.showToast('创建对局失败，请确认后端服务已启动')
   }

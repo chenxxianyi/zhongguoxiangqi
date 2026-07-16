@@ -9,8 +9,10 @@ POST /api/v1/matches
 Idempotency-Key: create-demo-1
 Content-Type: application/json
 
-{"playerColor":"red","difficulty":4,"allowUndo":true}
+{"playerColor":"red","difficulty":4,"aiMode":"standard","allowUndo":true}
 ```
+
+`aiMode` 可为 `standard`、`library`、`style`，省略时按 `standard` 处理。学习相关模式会优先尝试当前激活学习版本中的局面着法，未命中时回退内置搜索引擎。
 
 ```http
 POST /api/v1/matches/{id}/moves
@@ -61,4 +63,3 @@ JSON 导入：
 ```json
 {"code":"MATCH_VERSION_CONFLICT","message":"...","requestId":"...","details":null}
 ```
-

@@ -34,7 +34,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
       })
       currentJob.value = job
       await pollJob(job.id, matchId)
-    } catch (e) {
+    } catch {
       error.value = '创建分析任务失败'
       loading.value = false
     }

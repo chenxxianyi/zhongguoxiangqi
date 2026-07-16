@@ -26,6 +26,7 @@ export type MatchStatus = 'active_player_turn' | 'active_ai_thinking' | 'finishe
 
 export type MatchOutcome = 'ongoing' | 'red_win' | 'black_win' | 'draw'
 export type MatchTermination = '' | 'checkmate' | 'no_legal_moves' | 'resign' | 'draw_agreement' | 'threefold_repetition'
+export type MatchAIMode = 'standard' | 'library' | 'style'
 
 export interface MatchSnapshot {
   id: string
@@ -34,6 +35,7 @@ export interface MatchSnapshot {
   playerColor: 'red' | 'black'
   sideToMove: 'red' | 'black'
   difficulty: number
+  aiMode: MatchAIMode
   engine: string
   allowUndo: boolean
   initialFen: string
@@ -56,7 +58,6 @@ export interface MatchEvent<T = unknown> {
 }
 
 export interface MatchEventPayloads {
-  /* eslint-disable @typescript-eslint/no-empty-object-type */
   'match.snapshot': MatchSnapshot
   'match.move_accepted': MoveRecord
   'match.ai_thinking': { engine: string }
@@ -65,7 +66,6 @@ export interface MatchEventPayloads {
   'match.undo_applied': MatchSnapshot
   'match.engine_degraded': { reason: string }
   'match.draw_declined': MatchSnapshot
-  /* eslint-enable @typescript-eslint/no-empty-object-type */
 }
 
 // ── 难度配置 (Difficulty) ──

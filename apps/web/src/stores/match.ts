@@ -1,12 +1,12 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useRouter } from 'vue-router'
-import { apiRequest } from '@/api/client'
+import { apiRequest, createIdempotencyKey } from '@/api/client'
 import { connectMatchStream } from '@/api/stream'
 import { getPiecesFromFEN, toICCSCode, candidateMoves } from '@/utils/board'
 import { initialFEN } from '@/utils/fen'
 import { useUiStore } from './ui'
-import type { BoardPiece, BoardSquare, Color } from '@/types/xiangqi'
+import type { AiMode, BoardPiece, BoardSquare, Color } from '@/types/xiangqi'
 import type { MatchSnapshot, MatchStatus, MatchOutcome, MoveRecord } from '@/api/contracts'
 
 export const useMatchStore = defineStore('match', () => {
@@ -17,6 +17,7 @@ export const useMatchStore = defineStore('match', () => {
   const playerColor = ref<Color>('red')
   const sideToMove = ref<Color>('red')
   const difficulty = ref(0)
+  const aiMode = ref<AiMode>('standard')
   const engine = ref('')
   const allowUndo = ref(true)
   const fen = ref(initialFEN)
@@ -66,6 +67,7 @@ export const useMatchStore = defineStore('match', () => {
     playerColor.value = snapshot.playerColor as Color
     sideToMove.value = snapshot.sideToMove as Color
     difficulty.value = snapshot.difficulty
+    aiMode.value = snapshot.aiMode ?? 'standard'
     engine.value = snapshot.engine
     allowUndo.value = snapshot.allowUndo
     fen.value = snapshot.fen
@@ -159,12 +161,19 @@ export const useMatchStore = defineStore('match', () => {
   }
 
   // ── 创建对局 ──
-  async function createMatch(playerColorParam: Color, difficultyParam: number, allowUndoParam = true) {
+  async function createMatch(
+    playerColorParam: Color,
+    difficultyParam: number,
+    aiModeParam: AiMode = 'standard',
+    allowUndoParam = true,
+  ) {
     const snapshot = await apiRequest<MatchSnapshot>('/matches', {
       method: 'POST',
+      headers: { 'Idempotency-Key': createIdempotencyKey('match-create') },
       body: JSON.stringify({
         playerColor: playerColorParam,
         difficulty: difficultyParam,
+        aiMode: aiModeParam,
         allowUndo: allowUndoParam,
       }),
     })
@@ -208,6 +217,7 @@ export const useMatchStore = defineStore('match', () => {
     try {
       const snapshot = await apiRequest<MatchSnapshot>(`/matches/${matchId.value}/moves`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': createIdempotencyKey('match-move') },
         body: JSON.stringify({
           move: iccs,
           expectedMatchVersion: version.value,
@@ -230,6 +240,7 @@ export const useMatchStore = defineStore('match', () => {
     try {
       const snapshot = await apiRequest<MatchSnapshot>(`/matches/${matchId.value}/undo`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': createIdempotencyKey('match-undo') },
         body: JSON.stringify({ expectedMatchVersion: version.value }),
       })
       applySnapshot(snapshot)
@@ -250,6 +261,7 @@ export const useMatchStore = defineStore('match', () => {
     try {
       const snapshot = await apiRequest<MatchSnapshot>(`/matches/${matchId.value}/resign`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': createIdempotencyKey('match-resign') },
         body: JSON.stringify({ expectedMatchVersion: version.value }),
       })
       applySnapshot(snapshot)
@@ -270,6 +282,7 @@ export const useMatchStore = defineStore('match', () => {
         `/matches/${matchId.value}/draw-offers`,
         {
           method: 'POST',
+          headers: { 'Idempotency-Key': createIdempotencyKey('match-draw') },
           body: JSON.stringify({ expectedMatchVersion: version.value }),
         },
       )
@@ -299,6 +312,7 @@ export const useMatchStore = defineStore('match', () => {
     playerColor.value = 'red'
     sideToMove.value = 'red'
     difficulty.value = 0
+    aiMode.value = 'standard'
     engine.value = ''
     allowUndo.value = true
     fen.value = initialFEN
@@ -318,7 +332,7 @@ export const useMatchStore = defineStore('match', () => {
   return {
     // 状态
     matchId, version, status, playerColor, sideToMove, difficulty,
-    engine, allowUndo, fen, moves, outcome, drawOffered,
+    engine, aiMode, allowUndo, fen, moves, outcome, drawOffered,
     // UI
     flipped, soundEnabled, selectedPos, hints, thinking,
     // 派生

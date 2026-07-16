@@ -85,6 +85,10 @@ const opponentLabel = computed(() => {
   }
   return `棋境 AI · ${match.difficulty} 级`
 })
+
+const aiModeLabel = computed(() =>
+  ({ standard: '标准引擎', library: '棋谱库优先', style: '棋风模仿' })[match.aiMode],
+)
 </script>
 
 <template>
@@ -164,6 +168,7 @@ const opponentLabel = computed(() => {
             <div><dt>对局版本</dt><dd>v{{ match.version }}</dd></div>
             <div><dt>当前行棋方</dt><dd>{{ match.sideToMove === 'red' ? '红方' : '黑方' }}</dd></div>
             <div><dt>执色</dt><dd>{{ match.playerColor === 'red' ? '红方（先手）' : '黑方（后手）' }}</dd></div>
+            <div><dt>AI 模式</dt><dd>{{ aiModeLabel }}</dd></div>
             <div><dt>引擎</dt><dd>{{ match.engine || '内置引擎' }}</dd></div>
             <div><dt>AI 思考中</dt><dd>{{ match.thinking ? '是' : '否' }}</dd></div>
             <div v-if="match.isFinished">

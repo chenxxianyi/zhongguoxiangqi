@@ -1,5 +1,3 @@
-import type { PieceName } from '@/types/xiangqi'
-
 /**
  * ICCS 坐标转中文列号（红方视角从右往左 1-9，黑方视角从左往右 1-9）。
  * 在 ICCS 中 a=0, b=1, ..., i=8。
@@ -65,7 +63,6 @@ export function iccsToDisplay(iccsMove: string, fen?: string, viewerSide: 'red' 
 
   const fromCol = iccsFileToChineseCol(fromFile, viewerSide)
   const toCol = iccsFileToChineseCol(toFile, viewerSide)
-  const fromRow = viewerSide === 'red' ? 10 - fromRank : fromRank + 1
   const toRow = viewerSide === 'red' ? 10 - toRank : toRank + 1
 
   // 根据棋子的中文名和移动类型构建着法描述

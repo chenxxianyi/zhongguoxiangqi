@@ -17,6 +17,14 @@ const (
 	StatusRecoverableError Status = "recoverable_error"
 )
 
+type AIMode string
+
+const (
+	AIModeStandard AIMode = "standard"
+	AIModeLibrary  AIMode = "library"
+	AIModeStyle    AIMode = "style"
+)
+
 type MoveRecord struct {
 	Ply         int       `json:"ply"`
 	Move        string    `json:"move"`
@@ -36,6 +44,7 @@ type Match struct {
 	Status      Status              `json:"status"`
 	PlayerColor xiangqi.Color       `json:"-"`
 	Difficulty  int                 `json:"difficulty"`
+	AIMode      AIMode              `json:"aiMode"`
 	Engine      string              `json:"engine"`
 	AllowUndo   bool                `json:"allowUndo"`
 	InitialFEN  string              `json:"initialFen"`
@@ -56,6 +65,7 @@ type Snapshot struct {
 	PlayerColor string              `json:"playerColor"`
 	SideToMove  string              `json:"sideToMove"`
 	Difficulty  int                 `json:"difficulty"`
+	AIMode      AIMode              `json:"aiMode"`
 	Engine      string              `json:"engine"`
 	AllowUndo   bool                `json:"allowUndo"`
 	InitialFEN  string              `json:"initialFen"`
@@ -73,7 +83,7 @@ func (m Match) Snapshot() Snapshot {
 	return Snapshot{
 		ID: m.ID, Version: m.Version, Status: m.Status,
 		PlayerColor: m.PlayerColor.String(), SideToMove: m.SideToMove.String(),
-		Difficulty: m.Difficulty, Engine: m.Engine, AllowUndo: m.AllowUndo,
+		Difficulty: m.Difficulty, AIMode: m.AIMode, Engine: m.Engine, AllowUndo: m.AllowUndo,
 		InitialFEN: m.InitialFEN, FEN: m.FEN, Moves: moves,
 		Outcome: m.Outcome, Termination: m.Termination, DrawOffered: m.DrawOffered,
 		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,

@@ -1,4 +1,4 @@
-import type { BoardPiece, BoardSquare, Color, PieceName } from '@/types/xiangqi'
+import type { BoardPiece, BoardSquare } from '@/types/xiangqi'
 import { parseFEN } from './fen'
 
 export function screenPosition(file: number, rank: number, flipped: boolean) {

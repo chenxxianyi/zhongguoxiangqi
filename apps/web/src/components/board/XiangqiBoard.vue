@@ -8,12 +8,21 @@ defineEmits<{ undo: []; resign: [] }>()
 const match = useMatchStore()
 const ui = useUiStore()
 
-function select(file: number, rank: number) {
+function handlePieceClick(file: number, rank: number) {
   const piece = match.pieces.find((p) => p.file === file && p.rank === rank)
   if (!piece) return
-  // 只能在己方回合选己方棋子
-  if (!match.myTurn || piece.color !== match.playerColor) return
-  match.selectPieceAt(file, rank)
+
+  if (!match.myTurn) return
+
+  if (piece.color === match.playerColor) {
+    match.selectPieceAt(file, rank)
+    return
+  }
+
+  const from = match.selectedPos
+  if (from) {
+    match.submitMove(from.file, from.rank, file, rank)
+  }
 }
 
 function move(toFile: number, toRank: number) {
@@ -49,7 +58,7 @@ function toggleSound() {
       ]"
       :style="screenPosition(piece.file, piece.rank, match.flipped)"
       :aria-label="`${piece.color === 'red' ? '红方' : '黑方'}${piece.name}，位置 ${piece.file},${piece.rank}`"
-      @click.stop="select(piece.file, piece.rank)"
+      @click.stop="handlePieceClick(piece.file, piece.rank)"
     >{{ piece.name }}</button>
     <button
       v-for="hint in match.hints"

@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import AppIcon from '@/components/common/AppIcon.vue'
 import { useAnalysisStore } from '@/stores/analysis'
 import { useMatchStore } from '@/stores/match'
 import { useUiStore } from '@/stores/ui'
 import { iccsToDisplay } from '@/utils/moveNotation'
-import type { MoveAnalysis } from '@/api/contracts'
 
 const route = useRoute()
 const router = useRouter()
@@ -121,7 +119,7 @@ function formatScore(loss?: number): string {
               暂无分析数据
             </div>
             <button
-              v-for="(move, index) in analysis.currentResult.moves"
+              v-for="move in analysis.currentResult.moves"
               :key="move.ply"
               class="turning-row"
               :class="{ active: selectedMovePly === move.ply }"

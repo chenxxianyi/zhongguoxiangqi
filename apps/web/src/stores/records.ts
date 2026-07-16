@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { apiRequest, createIdempotencyKey } from '@/api/client'
+import { apiRequest } from '@/api/client'
 import type { GameRecord, ImportBatch } from '@/api/contracts'
 
 export const useRecordsStore = defineStore('records', () => {

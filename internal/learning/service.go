@@ -157,6 +157,51 @@ func (s *Service) Rollback(versionID string) (Version, error) {
 	return s.Activate(versionID)
 }
 
+func (s *Service) SelectBookMove(position xiangqi.Position, mode string) (xiangqi.Move, bool) {
+	if mode != "library" && mode != "style" {
+		return xiangqi.Move{}, false
+	}
+	hash := fmt.Sprintf("%016x", position.Hash())
+	side := position.SideToMove()
+
+	s.mu.RLock()
+	version, ok := s.versions[s.activeID]
+	s.mu.RUnlock()
+	if !ok || version.Status != "active" {
+		return xiangqi.Move{}, false
+	}
+
+	type candidate struct {
+		entry BookEntry
+		score int
+	}
+	candidates := make([]candidate, 0)
+	for _, entry := range version.Entries {
+		if entry.PositionHash != hash || entry.SideToMove != side.String() {
+			continue
+		}
+		move, err := xiangqi.ParseMove(entry.Move)
+		if err != nil || !position.IsLegal(move) {
+			continue
+		}
+		candidates = append(candidates, candidate{entry: entry, score: bookScore(entry, side, mode)})
+	}
+	if len(candidates) == 0 {
+		return xiangqi.Move{}, false
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].entry.Move < candidates[j].entry.Move
+		}
+		return candidates[i].score > candidates[j].score
+	})
+	move, err := xiangqi.ParseMove(candidates[0].entry.Move)
+	if err != nil {
+		return xiangqi.Move{}, false
+	}
+	return move, true
+}
+
 func (s *Service) build(jobID string, request CreateJobRequest) {
 	s.updateJob(jobID, func(job *Job) {
 		job.Status, job.Progress = "running", 5
@@ -248,6 +293,19 @@ func (s *Service) build(jobID string, request CreateJobRequest) {
 	job.CompletedAt = time.Now().UTC()
 	s.jobs[jobID] = job
 	s.mu.Unlock()
+}
+
+func bookScore(entry BookEntry, side xiangqi.Color, mode string) int {
+	if mode == "style" {
+		return entry.Samples*100 + entry.Draws
+	}
+	score := entry.Samples * 10
+	if side == xiangqi.Red {
+		score += entry.RedWins*100 + entry.Draws*20 - entry.BlackWins*100
+	} else {
+		score += entry.BlackWins*100 + entry.Draws*20 - entry.RedWins*100
+	}
+	return score
 }
 
 func (s *Service) updateJob(jobID string, update func(*Job)) {

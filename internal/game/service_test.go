@@ -27,6 +27,48 @@ func (e firstMoveEngine) Analyze(ctx context.Context, request engine.AnalyzeRequ
 	return engine.AnalyzeResult{BestMove: move, BestMoveICCS: move.ICCS()}, nil
 }
 
+type fixedBook struct {
+	move string
+}
+
+func (b fixedBook) SelectBookMove(_ xiangqi.Position, _ string) (xiangqi.Move, bool) {
+	move, err := xiangqi.ParseMove(b.move)
+	return move, err == nil
+}
+
+func TestCreateStoresAIModeAndUsesBookAdvisor(t *testing.T) {
+	service := NewService(NewMemoryRepository(), firstMoveEngine{}, NewEventBus(), time.Second)
+	service.SetBookAdvisor(fixedBook{move: "a6a5"})
+	match, err := service.Create(CreateRequest{PlayerColor: "red", Difficulty: 1, AIMode: "library"}, "create-book")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if match.AIMode != AIModeLibrary {
+		t.Fatalf("ai mode = %s", match.AIMode)
+	}
+	if _, err := service.Create(CreateRequest{PlayerColor: "red", Difficulty: 1, AIMode: "unknown"}, ""); err == nil {
+		t.Fatal("expected invalid aiMode error")
+	}
+	if _, err := service.ApplyPlayerMove(match.ID, MoveRequest{Move: "a3a4", ExpectedMatchVersion: match.Version}, "move-book"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		current, err := service.Get(match.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(current.Moves) == 2 {
+			if current.Moves[1].Move != "a6a5" {
+				t.Fatalf("book move not used: %+v", current.Moves)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("book move was not applied")
+}
+
 func TestMatchMoveVersionAndAsyncAI(t *testing.T) {
 	service := NewService(NewMemoryRepository(), firstMoveEngine{}, NewEventBus(), time.Second)
 	match, err := service.Create(CreateRequest{PlayerColor: "red", Difficulty: 1}, "create-1")

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -40,8 +41,8 @@ func TestMatchHTTPFlowAndStructuredError(t *testing.T) {
 	defer api.Close()
 
 	created := requestJSON[game.Snapshot](t, http.MethodPost, api.URL+"/api/v1/matches",
-		map[string]any{"playerColor": "red", "difficulty": 1}, http.StatusCreated)
-	if created.Version != 1 || created.SideToMove != "red" {
+		map[string]any{"playerColor": "red", "difficulty": 1, "aiMode": "library"}, http.StatusCreated)
+	if created.Version != 1 || created.SideToMove != "red" || created.AIMode != game.AIModeLibrary {
 		t.Fatalf("created: %+v", created)
 	}
 	moved := requestJSON[game.Snapshot](t, http.MethodPost, api.URL+"/api/v1/matches/"+created.ID+"/moves",
@@ -73,6 +74,12 @@ func TestHealthAndRecordImport(t *testing.T) {
 		map[string]any{"name": "demo", "format": "iccs", "content": "a3a4 a6a5"}, http.StatusCreated)
 	if batch.ImportedGames != 1 {
 		t.Fatalf("batch: %+v", batch)
+	}
+	multipartBatch := requestMultipartImport(t, api.URL+"/api/v1/records/imports", map[string]string{
+		"name": "multipart demo", "format": "iccs",
+	}, "demo.iccs", "c3c4 c6c5", http.StatusCreated)
+	if multipartBatch.ImportedGames != 1 {
+		t.Fatalf("multipart batch: %+v", multipartBatch)
 	}
 }
 
@@ -169,6 +176,46 @@ func requestJSON[T any](t *testing.T, method, url string, body any, wantStatus i
 		t.Fatalf("status = %d, want %d: %s", response.StatusCode, wantStatus, data)
 	}
 	var result T
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func requestMultipartImport(t *testing.T, url string, fields map[string]string, filename, content string, wantStatus int) records.ImportBatch {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(file, content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != wantStatus {
+		data, _ := io.ReadAll(response.Body)
+		t.Fatalf("status = %d, want %d: %s", response.StatusCode, wantStatus, data)
+	}
+	var result records.ImportBatch
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}

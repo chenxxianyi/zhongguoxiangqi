@@ -21,14 +21,20 @@ type Service struct {
 	engine      engine.Engine
 	events      *EventBus
 	moveTimeCap time.Duration
+	book        BookAdvisor
 
 	cancelMu sync.Mutex
 	searches map[string]context.CancelFunc
 }
 
+type BookAdvisor interface {
+	SelectBookMove(position xiangqi.Position, mode string) (xiangqi.Move, bool)
+}
+
 type CreateRequest struct {
 	PlayerColor string `json:"playerColor"`
 	Difficulty  int    `json:"difficulty"`
+	AIMode      string `json:"aiMode,omitempty"`
 	InitialFEN  string `json:"initialFen,omitempty"`
 	AllowUndo   *bool  `json:"allowUndo,omitempty"`
 }
@@ -49,6 +55,10 @@ func NewService(repository *MemoryRepository, searchEngine engine.Engine, events
 	}
 }
 
+func (s *Service) SetBookAdvisor(book BookAdvisor) {
+	s.book = book
+}
+
 func (s *Service) Create(request CreateRequest, idempotencyKey string) (Snapshot, error) {
 	digest := requestDigest(request)
 	if existing, ok, err := s.repository.Idempotency("create-match", idempotencyKey, digest); err != nil {
@@ -63,6 +73,10 @@ func (s *Service) Create(request CreateRequest, idempotencyKey string) (Snapshot
 	if request.Difficulty < 1 || request.Difficulty > 10 {
 		return Snapshot{}, fmt.Errorf("difficulty must be between 1 and 10")
 	}
+	aiMode, err := parseAIMode(request.AIMode)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	position := xiangqi.InitialPosition()
 	if strings.TrimSpace(request.InitialFEN) != "" {
 		position, err = xiangqi.ParseFEN(request.InitialFEN)
@@ -76,7 +90,7 @@ func (s *Service) Create(request CreateRequest, idempotencyKey string) (Snapshot
 	}
 	now := time.Now().UTC()
 	match := Match{
-		ID: newID(), Version: 1, PlayerColor: player, Difficulty: request.Difficulty,
+		ID: newID(), Version: 1, PlayerColor: player, Difficulty: request.Difficulty, AIMode: aiMode,
 		Engine: s.engine.Name(), AllowUndo: allowUndo, InitialFEN: position.FEN(), FEN: position.FEN(),
 		SideToMove: position.SideToMove(), Outcome: xiangqi.OutcomeOngoing,
 		CreatedAt: now, UpdatedAt: now, Moves: []MoveRecord{},
@@ -310,6 +324,13 @@ func (s *Service) runAI(ctx context.Context, id string, expectedVersion int64) {
 		s.markRecoverable(id, expectedVersion, "invalid_authoritative_fen")
 		return
 	}
+	if s.book != nil && match.AIMode != AIModeStandard {
+		if bookMove, ok := s.book.SelectBookMove(position, string(match.AIMode)); ok && position.IsLegal(bookMove) {
+			if s.applyAIMove(id, expectedVersion, bookMove, started, 0, 0, "learning_book") {
+				return
+			}
+		}
+	}
 	profile := difficulty.Get(match.Difficulty)
 	moveTime := profile.MoveTime
 	if s.moveTimeCap > 0 && moveTime > s.moveTimeCap {
@@ -329,6 +350,18 @@ func (s *Service) runAI(ctx context.Context, id string, expectedVersion int64) {
 		s.markRecoverable(id, expectedVersion, "engine_returned_illegal_move")
 		return
 	}
+	s.applyAIMove(id, expectedVersion, result.BestMove, started, result.Depth, result.Nodes, result.StoppedReason)
+}
+
+func (s *Service) applyAIMove(
+	id string,
+	expectedVersion int64,
+	move xiangqi.Move,
+	started time.Time,
+	depth int,
+	nodes uint64,
+	stoppedReason string,
+) bool {
 	updated, err := s.repository.Update(id, expectedVersion, func(current *Match) error {
 		if current.Status != StatusAIThinking || current.SideToMove == current.PlayerColor {
 			return ErrStateConflict
@@ -337,14 +370,14 @@ func (s *Service) runAI(ctx context.Context, id string, expectedVersion int64) {
 		if err != nil {
 			return err
 		}
-		if !authoritative.IsLegal(result.BestMove) {
+		if !authoritative.IsLegal(move) {
 			return xiangqi.ErrIllegalMove
 		}
-		next, captured, err := authoritative.Apply(result.BestMove)
+		next, captured, err := authoritative.Apply(move)
 		if err != nil {
 			return err
 		}
-		appendMove(current, authoritative, next, result.BestMove, captured, "ai", time.Since(started))
+		appendMove(current, authoritative, next, move, captured, "ai", time.Since(started))
 		current.Version++
 		applyAdjudication(current, next)
 		if current.Status != StatusFinished {
@@ -353,15 +386,16 @@ func (s *Service) runAI(ctx context.Context, id string, expectedVersion int64) {
 		return nil
 	})
 	if err != nil {
-		return // stale/cancelled results are intentionally discarded
+		return false // stale/cancelled results are intentionally discarded
 	}
 	s.events.Publish(id, updated.Version, "match.ai_move_applied", map[string]any{
-		"move": updated.Moves[len(updated.Moves)-1], "depth": result.Depth,
-		"nodes": result.Nodes, "stoppedReason": result.StoppedReason,
+		"move": updated.Moves[len(updated.Moves)-1], "depth": depth,
+		"nodes": nodes, "stoppedReason": stoppedReason,
 	})
 	if updated.Status == StatusFinished {
 		s.events.Publish(id, updated.Version, "match.finished", updated.Snapshot())
 	}
+	return true
 }
 
 func (s *Service) markRecoverable(id string, expectedVersion int64, reason string) {
@@ -444,6 +478,19 @@ func parseColor(raw string) (xiangqi.Color, error) {
 		return xiangqi.Black, nil
 	default:
 		return xiangqi.NoColor, fmt.Errorf("playerColor must be red or black")
+	}
+}
+
+func parseAIMode(raw string) (AIMode, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(AIModeStandard):
+		return AIModeStandard, nil
+	case string(AIModeLibrary):
+		return AIModeLibrary, nil
+	case string(AIModeStyle):
+		return AIModeStyle, nil
+	default:
+		return "", fmt.Errorf("aiMode must be standard, library or style")
 	}
 }
 

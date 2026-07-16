@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"xiangqi-lab/internal/analysis"
 	"xiangqi-lab/internal/config"
+	"xiangqi-lab/internal/database"
 	"xiangqi-lab/internal/engine/builtin"
 	"xiangqi-lab/internal/game"
 	"xiangqi-lab/internal/learning"
@@ -27,15 +29,43 @@ func main() {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+
+	// ── 数据库连接 ──
+	var db *sql.DB
+	if cfg.DataMode == "mysql" {
+		logger.Info("connecting to MySQL",
+			"host", cfg.DBHost,
+			"port", cfg.DBPort,
+			"database", cfg.DBName,
+		)
+		db, err = database.AutoCreateDatabase(cfg)
+		if err != nil {
+			logger.Warn("MySQL connection failed, falling back to in-memory", "error", err)
+			cfg.DataMode = "memory"
+		} else {
+			if err := database.Migrate(db, logger); err != nil {
+				logger.Error("database migration failed", "error", err)
+				os.Exit(1)
+			}
+			defer db.Close()
+			logger.Info("MySQL connected and migrated successfully",
+				"host", cfg.DBHost,
+				"port", cfg.DBPort,
+				"database", cfg.DBName,
+			)
+		}
+	}
+
 	searchEngine := builtin.New()
 	defer searchEngine.Close()
 
+	recordService := records.NewService()
+	learningService := learning.NewService(recordService)
 	events := game.NewEventBus()
 	matchService := game.NewService(
 		game.NewMemoryRepository(), searchEngine, events, cfg.EngineMoveTime,
 	)
-	recordService := records.NewService()
-	learningService := learning.NewService(recordService)
+	matchService.SetBookAdvisor(learningService)
 	analysisService := analysis.NewService(matchService, searchEngine)
 	api := httpapi.NewServer(
 		cfg, logger, matchService, events, recordService,
@@ -60,7 +90,7 @@ func run(server *http.Server, shutdownTimeout time.Duration, logger *slog.Logger
 	defer stop()
 	errs := make(chan error, 1)
 	go func() {
-		logger.Info("api listening", "address", server.Addr, "dataMode", "memory")
+		logger.Info("api listening", "address", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}

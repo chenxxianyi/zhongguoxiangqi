@@ -98,7 +98,7 @@ function statusClass(status: string): string {
       <article class="quality-card">
         <span>低样本条目</span>
         <strong>{{ learning.activeVersion.quality.lowSampleEntries }}</strong>
-        <small>样本 < 3 的局面</small>
+        <small>样本 &lt; 3 的局面</small>
       </article>
     </div>
 
