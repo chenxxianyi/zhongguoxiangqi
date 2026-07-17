@@ -26,6 +26,7 @@ import type {
   MatchSnapshot,
   MatchStatus,
   MatchOutcome,
+  MatchTermination,
   MoveRecord,
 } from '@/api/contracts'
 
@@ -44,6 +45,8 @@ export const useMatchStore = defineStore('match', () => {
   const fen = ref('')
   const moves = ref<MoveRecord[]>([])
   const outcome = ref<MatchOutcome>('ongoing')
+  const termination = ref<MatchTermination>('')
+  const inCheck = ref(false)
   const drawOffered = ref(false)
 
   // ── UI 交互状态 ──
@@ -68,8 +71,8 @@ export const useMatchStore = defineStore('match', () => {
 
   const statusLabel = computed(() => {
     if (status.value === 'finished') return '对局已结束'
-    if (status.value === 'active_player_turn') return '你的回合'
-    if (status.value === 'active_ai_thinking') return 'AI 思考中'
+    if (status.value === 'active_player_turn') return inCheck.value ? '被将军，请应将' : '你的回合'
+    if (status.value === 'active_ai_thinking') return inCheck.value ? '你已将军' : 'AI 思考中'
     if (status.value === 'recoverable_error') return '引擎恢复中'
     return '对局已中止'
   })
@@ -141,6 +144,8 @@ export const useMatchStore = defineStore('match', () => {
     fen.value = snapshot.fen
     moves.value = snapshot.moves ?? []
     outcome.value = snapshot.outcome
+    termination.value = snapshot.termination ?? ''
+    inCheck.value = snapshot.inCheck ?? false
     drawOffered.value = snapshot.drawOffered ?? false
     thinking.value = snapshot.status === 'active_ai_thinking'
   }
@@ -187,6 +192,7 @@ export const useMatchStore = defineStore('match', () => {
       case 'match.move_accepted': {
         const moveRecord = event.payload as MoveRecord
         upsertMove(moveRecord)
+        inCheck.value = moveRecord.givesCheck ?? false
         status.value = 'active_ai_thinking'
         thinking.value = true
         if (moveRecord.fenAfter) {
@@ -209,6 +215,7 @@ export const useMatchStore = defineStore('match', () => {
           stoppedReason: string
         }
         upsertMove(payload.move)
+        inCheck.value = payload.move.givesCheck ?? false
         if (payload.move.fenAfter) {
           fen.value = payload.move.fenAfter
           sideToMove.value = getSideToMove(payload.move.fenAfter)
@@ -475,6 +482,8 @@ export const useMatchStore = defineStore('match', () => {
     fen.value = ''
     moves.value = []
     outcome.value = 'ongoing'
+    termination.value = ''
+    inCheck.value = false
     drawOffered.value = false
     thinking.value = false
     rejectedMove.value = null
@@ -489,7 +498,7 @@ export const useMatchStore = defineStore('match', () => {
   return {
     // 状态
     matchId, version, status, playerColor, sideToMove, difficulty,
-    engine, aiMode, allowUndo, initialFen, fen, moves, outcome, drawOffered,
+    engine, aiMode, allowUndo, initialFen, fen, moves, outcome, termination, inCheck, drawOffered,
     // UI
     flipped, soundEnabled, selectedPos, hints, legalMovesLoading, thinking, rejectedMove,
     // 派生

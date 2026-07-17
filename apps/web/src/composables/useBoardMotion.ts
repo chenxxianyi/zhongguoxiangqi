@@ -26,7 +26,7 @@ interface QueuedMove {
   record: MoveRecord
 }
 
-interface ParsedMove {
+export interface BoardMoveSquares {
   from: BoardSquare
   to: BoardSquare
 }
@@ -38,7 +38,7 @@ const UNDO_NEAR_MS = 180
 const UNDO_FAR_MS = 220
 const ARRIVAL_MARKER_MS = 440
 
-function parseMove(move: string): ParsedMove | null {
+function parseMove(move: string): BoardMoveSquares | null {
   if (!/^[a-i][0-9][a-i][0-9]$/.test(move)) return null
 
   return {
@@ -90,7 +90,7 @@ function boardSignature(pieces: BoardPiece[]) {
     .join('|')
 }
 
-function moveDuration(record: MoveRecord, parsed: ParsedMove, reverse: boolean) {
+function moveDuration(record: MoveRecord, parsed: BoardMoveSquares, reverse: boolean) {
   const fileDistance = parsed.to.file - parsed.from.file
   const rankDistance = parsed.to.rank - parsed.from.rank
   const distance = Math.min(8, Math.hypot(fileDistance, rankDistance))
@@ -123,6 +123,9 @@ export function useBoardMotion(options: BoardMotionOptions) {
   const pieces = ref<MotionBoardPiece[]>([])
   const isAnimating = ref(false)
   const lastSquare = ref<BoardSquare | null>(targetOf(latestMoves.at(-1)))
+  const lastMoveSquares = ref<BoardMoveSquares | null>(
+    latestMoves.at(-1) ? parseMove(latestMoves.at(-1)!.move) : null,
+  )
   const arrivalMarker = ref<BoardArrivalMarker | null>(null)
 
   const reducedMotion = ref(false)
@@ -205,7 +208,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
     }, ARRIVAL_MARKER_MS)
   }
 
-  function buildForwardPieces(record: MoveRecord, parsed: ParsedMove, durationMs: number) {
+  function buildForwardPieces(record: MoveRecord, parsed: BoardMoveSquares, durationMs: number) {
     if (!matchesFen(record.fenBefore)) syncToFen(record.fenBefore)
 
     const current = activePieces()
@@ -249,7 +252,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
     return next
   }
 
-  function buildReversePieces(record: MoveRecord, parsed: ParsedMove, durationMs: number) {
+  function buildReversePieces(record: MoveRecord, parsed: BoardMoveSquares, durationMs: number) {
     if (!matchesFen(record.fenAfter)) syncToFen(record.fenAfter)
 
     const current = activePieces()
@@ -325,6 +328,9 @@ export function useBoardMotion(options: BoardMotionOptions) {
     if (activeGeneration === generation) {
       if (!matchesFen(latestFen)) syncToFen(latestFen)
       lastSquare.value = targetOf(latestMoves.at(-1))
+      lastMoveSquares.value = latestMoves.at(-1)
+        ? parseMove(latestMoves.at(-1)!.move)
+        : null
       processing = false
       isAnimating.value = false
     }
@@ -354,6 +360,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
     cancelAnimations()
     syncToFen(fen)
     lastSquare.value = targetOf(moves.at(-1))
+    lastMoveSquares.value = moves.at(-1) ? parseMove(moves.at(-1)!.move) : null
   }
 
   syncToFen(options.fen.value)
@@ -407,6 +414,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
     pieces,
     isAnimating,
     lastSquare,
+    lastMoveSquares,
     arrivalMarker,
     reducedMotion,
   }

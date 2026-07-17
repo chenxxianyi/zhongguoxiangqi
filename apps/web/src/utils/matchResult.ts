@@ -2,6 +2,7 @@ import type {
   MatchOutcome,
   MatchSnapshot,
   MatchStatus,
+  MatchTermination,
 } from '@/api/contracts'
 
 export type PlayerMatchResult = 'win' | 'loss' | 'draw' | 'ongoing' | 'aborted'
@@ -52,6 +53,17 @@ export function getPlayerResultLabel(result: PlayerMatchResult): string {
 
 export function getPlayerResultClass(result: PlayerMatchResult): 'win' | 'loss' | 'draw' {
   return result === 'ongoing' || result === 'aborted' ? 'draw' : result
+}
+
+export function getTerminationLabel(termination: MatchTermination | undefined): string {
+  return {
+    '': '未结束',
+    checkmate: '将死',
+    no_legal_moves: '困毙',
+    resign: '认输',
+    draw_agreement: '协议和棋',
+    threefold_repetition: '三次重复',
+  }[termination ?? '']
 }
 
 export function getMatchResultStats(matches: MatchSnapshot[]): MatchResultStats {

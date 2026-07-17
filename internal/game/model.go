@@ -36,6 +36,7 @@ type MoveRecord struct {
 	HashAfter   string    `json:"hashAfter"`
 	PlayedAt    time.Time `json:"playedAt"`
 	ThinkTimeMs int64     `json:"thinkTimeMs,omitempty"`
+	GivesCheck  bool      `json:"givesCheck"`
 }
 
 type Match struct {
@@ -73,6 +74,7 @@ type Snapshot struct {
 	Moves       []MoveRecord        `json:"moves"`
 	Outcome     xiangqi.Outcome     `json:"outcome"`
 	Termination xiangqi.Termination `json:"termination,omitempty"`
+	InCheck     bool                `json:"inCheck"`
 	DrawOffered bool                `json:"drawOffered"`
 	CreatedAt   time.Time           `json:"createdAt"`
 	UpdatedAt   time.Time           `json:"updatedAt"`
@@ -94,12 +96,21 @@ type LegalMovesResponse struct {
 
 func (m Match) Snapshot() Snapshot {
 	moves := append([]MoveRecord(nil), m.Moves...)
+	for index := range moves {
+		if position, err := xiangqi.ParseFEN(moves[index].FENAfter); err == nil {
+			moves[index].GivesCheck = position.InCheck(position.SideToMove())
+		}
+	}
+	inCheck := false
+	if position, err := xiangqi.ParseFEN(m.FEN); err == nil {
+		inCheck = position.InCheck(position.SideToMove())
+	}
 	return Snapshot{
 		ID: m.ID, Version: m.Version, Status: m.Status,
 		PlayerColor: m.PlayerColor.String(), SideToMove: m.SideToMove.String(),
 		Difficulty: m.Difficulty, AIMode: m.AIMode, Engine: m.Engine, AllowUndo: m.AllowUndo,
 		InitialFEN: m.InitialFEN, FEN: m.FEN, Moves: moves,
-		Outcome: m.Outcome, Termination: m.Termination, DrawOffered: m.DrawOffered,
+		Outcome: m.Outcome, Termination: m.Termination, InCheck: inCheck, DrawOffered: m.DrawOffered,
 		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 	}
 }

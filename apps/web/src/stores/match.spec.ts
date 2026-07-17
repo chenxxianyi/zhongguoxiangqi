@@ -39,6 +39,8 @@ function createSnapshot(overrides: Partial<MatchSnapshot> = {}): MatchSnapshot {
     fen: initialFEN,
     moves: [],
     outcome: 'ongoing',
+    termination: '',
+    inCheck: false,
     drawOffered: false,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
@@ -115,6 +117,26 @@ describe('match store', () => {
     expect(store.matchId).toBe('match-1')
     expect(store.aiMode).toBe('library')
     expect(push).toHaveBeenCalledWith('/match/match-1')
+  })
+
+  it('keeps authoritative check and checkmate state from snapshots', async () => {
+    const snapshot = createSnapshot({
+      status: 'finished',
+      sideToMove: 'black',
+      outcome: 'red_win',
+      termination: 'checkmate',
+      inCheck: true,
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(snapshot), { status: 201, headers: { 'Content-Type': 'application/json' } }),
+    )
+    const store = useMatchStore()
+
+    await store.createMatch('red', 4)
+
+    expect(store.inCheck).toBe(true)
+    expect(store.termination).toBe('checkmate')
+    expect(store.statusLabel).toBe('对局已结束')
   })
 
   it('restores selection and reports an illegal move precisely', async () => {

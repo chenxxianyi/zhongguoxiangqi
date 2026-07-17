@@ -11,6 +11,7 @@ import {
   getPlayerResult,
   getPlayerResultClass,
   getPlayerResultLabel,
+  getTerminationLabel,
 } from '@/utils/matchResult'
 
 const route = useRoute()
@@ -61,7 +62,8 @@ watch(
     if (finished) {
       const result = getPlayerResult(match.outcome, match.playerColor)
       const label = getPlayerResultLabel(result)
-      ui.showToast(`对局结束：${result === 'draw' ? '和棋' : `你${label}`}`)
+      const reason = getTerminationLabel(match.termination)
+      ui.showToast(`对局结束：${result === 'draw' ? '和棋' : `你${label}`} · ${reason}`)
     }
   },
 )
@@ -81,6 +83,13 @@ async function confirmResign() {
 
 async function handleDraw() {
   await match.offerDraw()
+}
+
+function moveStateLabel(moveIndex: number) {
+  const move = match.moves[moveIndex]
+  if (!move?.givesCheck) return ''
+  const isFinalMove = moveIndex === match.moves.length - 1
+  return isFinalMove && match.termination === 'checkmate' ? '杀' : '将'
 }
 
 // ── 对手信息 ──
@@ -161,8 +170,14 @@ const playerResult = computed(() => getPlayerResult(match.outcome, match.playerC
               :class="{ current: index === moveRows.length - 1 }"
             >
               <span>{{ move[0] }}</span>
-              <button>{{ move[1] }}</button>
-              <button>{{ move[2] }}</button>
+              <button>
+                {{ move[1] }}
+                <span v-if="moveStateLabel(index * 2)" class="move-state-mark">{{ moveStateLabel(index * 2) }}</span>
+              </button>
+              <button>
+                {{ move[2] }}
+                <span v-if="moveStateLabel(index * 2 + 1)" class="move-state-mark">{{ moveStateLabel(index * 2 + 1) }}</span>
+              </button>
             </li>
           </ol>
           <div v-if="moveRows.length === 0" class="move-list-empty">
@@ -178,6 +193,7 @@ const playerResult = computed(() => getPlayerResult(match.outcome, match.playerC
             <div><dt>当前 FEN</dt><dd>{{ match.fen.split(' ')[0] ?? match.fen }}</dd></div>
             <div><dt>对局版本</dt><dd>v{{ match.version }}</dd></div>
             <div><dt>当前行棋方</dt><dd>{{ match.sideToMove === 'red' ? '红方' : '黑方' }}</dd></div>
+            <div><dt>局面状态</dt><dd :class="{ 'danger-text': match.inCheck }">{{ match.inCheck ? '将军' : '正常' }}</dd></div>
             <div><dt>执色</dt><dd>{{ match.playerColor === 'red' ? '红方（先手）' : '黑方（后手）' }}</dd></div>
             <div><dt>AI 模式</dt><dd>{{ aiModeLabel }}</dd></div>
             <div><dt>引擎</dt><dd>{{ match.engine || '未提供' }}</dd></div>
@@ -190,6 +206,7 @@ const playerResult = computed(() => getPlayerResult(match.outcome, match.playerC
                 </span>
               </dd>
             </div>
+            <div v-if="match.isFinished"><dt>终局原因</dt><dd>{{ getTerminationLabel(match.termination) }}</dd></div>
           </dl>
         </div>
 

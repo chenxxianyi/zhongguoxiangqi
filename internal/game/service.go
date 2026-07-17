@@ -465,7 +465,7 @@ func appendMove(match *Match, before, after xiangqi.Position, move xiangqi.Move,
 		Ply: len(match.Moves) + 1, Move: move.ICCS(), Side: before.SideToMove().String(),
 		Actor: actor, Captured: pieceName(captured), FENBefore: before.FEN(), FENAfter: after.FEN(),
 		HashAfter: fmt.Sprintf("%016x", after.Hash()), PlayedAt: time.Now().UTC(),
-		ThinkTimeMs: thinkTime.Milliseconds(),
+		ThinkTimeMs: thinkTime.Milliseconds(), GivesCheck: after.InCheck(after.SideToMove()),
 	})
 	match.FEN, match.SideToMove, match.UpdatedAt = after.FEN(), after.SideToMove(), time.Now().UTC()
 }

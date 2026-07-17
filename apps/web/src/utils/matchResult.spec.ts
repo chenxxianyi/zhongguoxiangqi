@@ -4,6 +4,7 @@ import {
   getMatchDestination,
   getMatchResult,
   getMatchResultStats,
+  getTerminationLabel,
   getPlayerResultClass,
   getPlayerResult,
   isActiveMatch,
@@ -76,5 +77,11 @@ describe('match result helpers', () => {
     expect(getMatchResult(aborted)).toBe('aborted')
     expect(getPlayerResultClass(getMatchResult(aborted))).toBe('draw')
     expect(getMatchDestination(aborted)).toBe('/analysis/match-1')
+  })
+
+  it('uses precise Chinese labels for terminal reasons', () => {
+    expect(getTerminationLabel('checkmate')).toBe('将死')
+    expect(getTerminationLabel('no_legal_moves')).toBe('困毙')
+    expect(getTerminationLabel(undefined)).toBe('未结束')
   })
 })

@@ -27,10 +27,15 @@ const match = reactive({
     { color: 'red', name: '车', file: 0, rank: 5 },
     { color: 'black', name: '车', file: 0, rank: 3 },
   ],
-  hints: [],
-  selectedPos: { file: 0, rank: 5 },
+  hints: [] as Array<{ file: number; rank: number }>,
+  legalMovesLoading: false,
+  selectedPos: { file: 0, rank: 5 } as { file: number; rank: number } | null,
   myTurn: true,
   playerColor: 'red',
+  sideToMove: 'red',
+  inCheck: false,
+  outcome: 'ongoing',
+  termination: '',
   flipped: false,
   allowUndo: true,
   isFinished: false,
@@ -57,7 +62,14 @@ describe('XiangqiBoard', () => {
     match.selectedPos = { file: 0, rank: 5 }
     match.myTurn = true
     match.playerColor = 'red'
+    match.sideToMove = 'red'
+    match.inCheck = false
+    match.outcome = 'ongoing'
+    match.termination = ''
+    match.isFinished = false
     match.flipped = false
+    match.hints = []
+    match.legalMovesLoading = false
     match.rejectedMove = null
     match.selectPieceAt.mockClear()
     match.submitMove.mockClear()
@@ -83,6 +95,64 @@ describe('XiangqiBoard', () => {
 
     expect(match.selectPieceAt).toHaveBeenCalledWith(0, 5)
     expect(match.submitMove).not.toHaveBeenCalled()
+  })
+
+  it('draws routes and distinguishes empty moves from captures', async () => {
+    match.hints = [
+      { file: 1, rank: 5 },
+      { file: 0, rank: 3 },
+    ]
+    const wrapper = mount(XiangqiBoard, {
+      global: { stubs: { AppIcon: true } },
+    })
+
+    expect(wrapper.findAll('.board-route-layer line')).toHaveLength(2)
+    expect(wrapper.findAll('.move-hint')).toHaveLength(2)
+    expect(wrapper.findAll('.move-hint.capture')).toHaveLength(1)
+
+    await wrapper.find('.move-hint.capture').trigger('click')
+    expect(match.submitMove).toHaveBeenCalledWith(0, 5, 0, 3)
+  })
+
+  it('keeps the previous move origin and destination visible', () => {
+    match.fen = afterFen
+    match.moves = [captureMove]
+    const wrapper = mount(XiangqiBoard, {
+      global: { stubs: { AppIcon: true } },
+    })
+
+    expect(wrapper.find('.last-move-marker.from').attributes('style')).toContain('top: 55.05%')
+    expect(wrapper.find('.last-move-marker.to').attributes('style')).toContain('top: 34.83%')
+  })
+
+  it('warns when the side to move is in check', () => {
+    match.fen = '4k4/9/9/9/4R4/9/9/9/9/3K5 b'
+    match.selectedPos = null
+    match.sideToMove = 'black'
+    match.inCheck = true
+    const wrapper = mount(XiangqiBoard, {
+      global: { stubs: { AppIcon: true } },
+    })
+
+    expect(wrapper.find('.board-piece.black.in-check').exists()).toBe(true)
+    expect(wrapper.find('.board-check-callout').text()).toContain('将军')
+  })
+
+  it('shows a terminal checkmate card with the player result', () => {
+    match.fen = '4k4/3RR4/6H2/9/9/9/9/9/9/4K4 b'
+    match.selectedPos = null
+    match.sideToMove = 'black'
+    match.inCheck = true
+    match.isFinished = true
+    match.outcome = 'red_win'
+    match.termination = 'checkmate'
+    const wrapper = mount(XiangqiBoard, {
+      global: { stubs: { AppIcon: true } },
+    })
+
+    expect(wrapper.find('.board-check-callout').exists()).toBe(false)
+    expect(wrapper.find('.board-finish-card').text()).toContain('绝杀')
+    expect(wrapper.find('.board-finish-card').text()).toContain('你获胜')
   })
 
   it('keeps the moving piece mounted while a captured piece exits', async () => {

@@ -20,6 +20,7 @@ export interface MoveRecord {
   hashAfter: string
   playedAt: string
   thinkTimeMs?: number
+  givesCheck?: boolean
 }
 
 export type MatchStatus = 'active_player_turn' | 'active_ai_thinking' | 'finished' | 'aborted' | 'recoverable_error'
@@ -43,6 +44,7 @@ export interface MatchSnapshot {
   moves: MoveRecord[]
   outcome: MatchOutcome
   termination?: MatchTermination
+  inCheck?: boolean
   drawOffered: boolean
   createdAt: string
   updatedAt: string

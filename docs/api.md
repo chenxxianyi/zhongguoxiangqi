@@ -25,6 +25,12 @@ Content-Type: application/json
 写接口的 `expectedMatchVersion` 不匹配时返回 `409 MATCH_VERSION_CONFLICT`。
 非法着返回 `422 ILLEGAL_MOVE`。玩家落子返回 `202`，不等待 AI 搜索。
 
+对局快照包含用于局面提示的权威字段：
+
+- `inCheck`：当前行棋方是否正被将军；
+- `termination`：终局原因，包括 `checkmate`、`no_legal_moves`、`resign` 等；
+- `moves[].givesCheck`：该步是否造成将军，旧对局会根据保存的 `fenAfter` 自动补算。
+
 实时事件：
 
 - WebSocket：`ws://127.0.0.1:8080/api/v1/matches/{id}/stream`
