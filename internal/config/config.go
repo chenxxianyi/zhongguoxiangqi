@@ -32,14 +32,14 @@ type Config struct {
 
 func Load() (Config, error) {
 	// 自动加载 .env 文件（如果存在）
-	_ = loadDotEnv(".env")       // 项目根目录
-	_ = loadDotEnv("../.env")    // 从 cmd/api/ 或 cmd/worker/ 运行时
+	_ = loadDotEnv(".env")    // 项目根目录
+	_ = loadDotEnv("../.env") // 从 cmd/api/ 或 cmd/worker/ 运行时
 
 	shutdownTimeout, err := durationEnv("XIANGQI_SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
-	engineMoveTime, err := durationEnv("XIANGQI_ENGINE_MOVE_TIME", 600*time.Millisecond)
+	engineMoveTime, err := durationEnv("XIANGQI_ENGINE_MOVE_TIME", 2*time.Second)
 	if err != nil {
 		return Config{}, err
 	}

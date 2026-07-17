@@ -27,6 +27,19 @@ func (e firstMoveEngine) Analyze(ctx context.Context, request engine.AnalyzeRequ
 	return engine.AnalyzeResult{BestMove: move, BestMoveICCS: move.ICCS()}, nil
 }
 
+type recordingEngine struct {
+	requests chan engine.AnalyzeRequest
+}
+
+func (e recordingEngine) Name() string                 { return "test-recording" }
+func (e recordingEngine) Health(context.Context) error { return nil }
+func (e recordingEngine) Close() error                 { return nil }
+func (e recordingEngine) Analyze(_ context.Context, request engine.AnalyzeRequest) (engine.AnalyzeResult, error) {
+	e.requests <- request
+	move := request.Position.LegalMoves()[0]
+	return engine.AnalyzeResult{BestMove: move, BestMoveICCS: move.ICCS()}, nil
+}
+
 type fixedBook struct {
 	move string
 }
@@ -171,5 +184,30 @@ func TestIdempotentMoveReturnsCurrentMatch(t *testing.T) {
 	}
 	if second.Version != first.Version || len(second.Moves) != 1 {
 		t.Fatalf("idempotent request applied twice: %+v", second)
+	}
+}
+
+func TestAIUsesFullHighLevelTimeAndSinglePV(t *testing.T) {
+	requests := make(chan engine.AnalyzeRequest, 1)
+	service := NewService(NewMemoryRepository(), recordingEngine{requests: requests}, NewEventBus(), 2*time.Second)
+	match, err := service.Create(CreateRequest{PlayerColor: "red", Difficulty: 10}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApplyPlayerMove(match.ID, MoveRequest{
+		Move: "a3a4", ExpectedMatchVersion: match.Version,
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case request := <-requests:
+		if request.MoveTime != 1800*time.Millisecond {
+			t.Fatalf("move time = %s, want 1.8s", request.MoveTime)
+		}
+		if request.MultiPV != 1 {
+			t.Fatalf("MultiPV = %d, want 1 for live play", request.MultiPV)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("AI search did not start")
 	}
 }

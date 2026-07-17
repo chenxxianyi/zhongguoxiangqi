@@ -81,7 +81,7 @@ func ParseFEN(raw string) (Position, error) {
 	return position, nil
 }
 
-func (p Position) FEN() string {
+func (p *Position) FEN() string {
 	var rows [Ranks]string
 	for rank := 0; rank < Ranks; rank++ {
 		var b strings.Builder
@@ -110,10 +110,10 @@ func (p Position) FEN() string {
 	return strings.Join(rows[:], "/") + " " + side
 }
 
-func (p Position) SideToMove() Color { return p.turn }
-func (p Position) Ply() int          { return p.ply }
+func (p *Position) SideToMove() Color { return p.turn }
+func (p *Position) Ply() int          { return p.ply }
 
-func (p Position) PieceAt(square Square) Piece {
+func (p *Position) PieceAt(square Square) Piece {
 	if !square.Valid() {
 		return Piece{}
 	}

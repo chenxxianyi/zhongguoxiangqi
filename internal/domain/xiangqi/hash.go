@@ -24,7 +24,7 @@ func init() {
 	zobristTurn = next()
 }
 
-func (p Position) Hash() uint64 {
+func (p *Position) Hash() uint64 {
 	var hash uint64
 	for rank := 0; rank < Ranks; rank++ {
 		for file := 0; file < Files; file++ {

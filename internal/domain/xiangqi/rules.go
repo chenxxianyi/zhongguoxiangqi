@@ -10,7 +10,7 @@ var (
 	ErrWrongTurn   = errors.New("piece does not belong to side to move")
 )
 
-func (p Position) IsLegal(move Move) bool {
+func (p *Position) IsLegal(move Move) bool {
 	if !move.From.Valid() || !move.To.Valid() || move.From == move.To {
 		return false
 	}
@@ -29,7 +29,7 @@ func (p Position) IsLegal(move Move) bool {
 	return !next.InCheck(piece.Color)
 }
 
-func (p Position) Apply(move Move) (Position, Piece, error) {
+func (p *Position) Apply(move Move) (Position, Piece, error) {
 	piece := p.PieceAt(move.From)
 	if piece.Empty() {
 		return Position{}, Piece{}, fmt.Errorf("%w: origin is empty", ErrIllegalMove)
@@ -44,8 +44,8 @@ func (p Position) Apply(move Move) (Position, Piece, error) {
 	return p.applyUnchecked(move), captured, nil
 }
 
-func (p Position) applyUnchecked(move Move) Position {
-	next := p
+func (p *Position) applyUnchecked(move Move) Position {
+	next := *p
 	next.board[move.To.Rank][move.To.File] = next.board[move.From.Rank][move.From.File]
 	next.board[move.From.Rank][move.From.File] = Piece{}
 	next.turn = p.turn.Opponent()
@@ -53,7 +53,7 @@ func (p Position) applyUnchecked(move Move) Position {
 	return next
 }
 
-func (p Position) LegalMoves() []Move {
+func (p *Position) LegalMoves() []Move {
 	moves := make([]Move, 0, 48)
 	for rank := 0; rank < Ranks; rank++ {
 		for file := 0; file < Files; file++ {
@@ -75,7 +75,7 @@ func (p Position) LegalMoves() []Move {
 	return moves
 }
 
-func (p Position) InCheck(color Color) bool {
+func (p *Position) InCheck(color Color) bool {
 	general, found := p.generalSquare(color)
 	if !found {
 		return true
@@ -96,7 +96,7 @@ func (p Position) InCheck(color Color) bool {
 	return false
 }
 
-func (p Position) Adjudicate() Adjudication {
+func (p *Position) Adjudicate() Adjudication {
 	moves := p.LegalMoves()
 	check := p.InCheck(p.turn)
 	if len(moves) > 0 {
@@ -113,7 +113,7 @@ func (p Position) Adjudicate() Adjudication {
 	return Adjudication{Outcome: outcome, Termination: reason, InCheck: check}
 }
 
-func (p Position) pseudoLegal(move Move, piece, target Piece) bool {
+func (p *Position) pseudoLegal(move Move, piece, target Piece) bool {
 	if !move.From.Valid() || !move.To.Valid() || move.From == move.To {
 		return false
 	}
@@ -176,7 +176,7 @@ func (p Position) pseudoLegal(move Move, piece, target Piece) bool {
 	}
 }
 
-func (p Position) blockersBetween(from, to Square) int {
+func (p *Position) blockersBetween(from, to Square) int {
 	df, dr := sign(to.File-from.File), sign(to.Rank-from.Rank)
 	if df != 0 && dr != 0 {
 		return -1
@@ -192,7 +192,7 @@ func (p Position) blockersBetween(from, to Square) int {
 	return count
 }
 
-func (p Position) generalSquare(color Color) (Square, bool) {
+func (p *Position) generalSquare(color Color) (Square, bool) {
 	for rank := 0; rank < Ranks; rank++ {
 		for file := 0; file < Files; file++ {
 			piece := p.board[rank][file]
