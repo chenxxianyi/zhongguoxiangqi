@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import { useRecordsStore } from '@/stores/records'
 import { useUiStore } from '@/stores/ui'
 
@@ -8,6 +9,11 @@ const recordsStore = useRecordsStore()
 const ui = useUiStore()
 const input = ref<HTMLInputElement | null>(null)
 const searchQuery = ref('')
+const dragging = ref(false)
+const pendingDeleteId = ref<string | null>(null)
+const pendingDeleteName = computed(() =>
+  recordsStore.records.find((record) => record.id === pendingDeleteId.value)?.name ?? '这盘棋谱',
+)
 
 const filteredRecords = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
@@ -22,8 +28,7 @@ onMounted(() => {
   if (!recordsStore.loaded) void recordsStore.fetchRecords()
 })
 
-async function upload(event: Event) {
-  const files = [...((event.target as HTMLInputElement).files ?? [])]
+async function processFiles(files: File[]) {
   if (!files.length) return
 
   recordsStore.importing = true
@@ -35,12 +40,29 @@ async function upload(event: Event) {
   if (input.value) input.value.value = ''
 }
 
+async function upload(event: Event) {
+  await processFiles([...((event.target as HTMLInputElement).files ?? [])])
+}
+
+function handleDrop(event: DragEvent) {
+  dragging.value = false
+  const files = [...(event.dataTransfer?.files ?? [])]
+    .filter((file) => /\.(txt|pgn|json)$/i.test(file.name))
+  if (!files.length) {
+    ui.showToast('请选择 TXT、PGN 或 JSON 棋谱文件')
+    return
+  }
+  void processFiles(files)
+}
+
 async function removeRecord(id: string) {
   try {
     await recordsStore.deleteRecord(id)
     ui.showToast('棋谱已删除')
   } catch {
     ui.showToast('删除棋谱失败')
+  } finally {
+    pendingDeleteId.value = null
   }
 }
 
@@ -84,10 +106,18 @@ function outcomeClass(outcome: string): string {
     </div>
 
     <div class="records-grid">
-      <div class="surface records-main">
+      <div
+        class="surface records-main record-dropzone"
+        :class="{ dragging }"
+        @dragenter.prevent="dragging = true"
+        @dragover.prevent="dragging = true"
+        @dragleave.self="dragging = false"
+        @drop.prevent="handleDrop"
+      >
+        <div class="record-drop-hint"><AppIcon name="upload" />也可将 TXT、PGN、JSON 文件拖到这里导入</div>
         <div class="records-toolbar">
           <div class="search-field">
-            <AppIcon name="eye" />
+            <AppIcon name="search" />
             <input
               v-model="searchQuery"
               type="search"
@@ -130,11 +160,11 @@ function outcomeClass(outcome: string): string {
                     {{ outcomeLabel(record.outcome) }}
                   </span>
                 </td>
-                <td>{{ record.moveCount }} 步</td>
+                <td>{{ record.moveCount }} 手</td>
                 <td>{{ formatDate(record.createdAt) }}</td>
                 <td>
-                  <button class="icon-button" aria-label="删除棋谱" @click="removeRecord(record.id)">
-                    <AppIcon name="close" />
+                  <button class="icon-button" :aria-label="`删除棋谱：${record.name}`" @click="pendingDeleteId = record.id">
+                    <AppIcon name="trash" />
                   </button>
                 </td>
               </tr>
@@ -178,5 +208,16 @@ function outcomeClass(outcome: string): string {
         </article>
       </aside>
     </div>
+
+    <AppModal
+      :open="pendingDeleteId !== null"
+      title="删除这盘棋谱？"
+      :description="`“${pendingDeleteName}”将从棋谱库中移除，此操作不可撤销。`"
+      danger
+      cancel-label="保留棋谱"
+      confirm-label="确认删除"
+      @close="pendingDeleteId = null"
+      @confirm="pendingDeleteId && removeRecord(pendingDeleteId)"
+    />
   </section>
 </template>

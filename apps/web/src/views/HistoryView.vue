@@ -18,6 +18,7 @@ const router = useRouter()
 const matches = ref<MatchSnapshot[]>([])
 const loaded = ref(false)
 const error = ref<string | null>(null)
+const activeFilter = ref<'all' | 'active' | 'finished'>('all')
 
 // ── 统计 ──
 const stats = computed(() => getMatchResultStats(matches.value))
@@ -26,6 +27,11 @@ const wins = computed(() => stats.value.wins)
 const draws = computed(() => stats.value.draws)
 const losses = computed(() => stats.value.losses)
 const winRateDisplay = computed(() => `${stats.value.winRate}%`)
+const filteredMatches = computed(() => matches.value.filter((matchItem) => {
+  if (activeFilter.value === 'active') return isActiveMatch(matchItem.status)
+  if (activeFilter.value === 'finished') return !isActiveMatch(matchItem.status)
+  return true
+}))
 
 onMounted(async () => {
   try {
@@ -72,6 +78,23 @@ function statusTag(status: MatchStatus): string {
     </div>
 
     <article class="surface history-list-panel">
+      <div v-if="loaded && !error && matches.length" class="history-filterbar" aria-label="筛选历史对局">
+        <div role="group" aria-label="对局状态">
+          <button
+            v-for="item in [
+              { id: 'all', label: '全部' },
+              { id: 'active', label: '进行中' },
+              { id: 'finished', label: '已结束' },
+            ]"
+            :key="item.id"
+            class="filter-button"
+            :class="{ active: activeFilter === item.id }"
+            :aria-pressed="activeFilter === item.id"
+            @click="activeFilter = item.id as typeof activeFilter"
+          >{{ item.label }}</button>
+        </div>
+        <span>{{ filteredMatches.length }} 盘</span>
+      </div>
       <div v-if="!loaded" class="loading-state">加载中…</div>
       <div v-else-if="error" class="error-state">
         <p>{{ error }}</p>
@@ -81,7 +104,7 @@ function statusTag(status: MatchStatus): string {
       </div>
       <div v-else class="history-list">
         <button
-          v-for="matchItem in matches"
+          v-for="matchItem in filteredMatches"
           :key="matchItem.id"
           class="history-row"
           @click="router.push(getMatchDestination(matchItem))"
@@ -97,7 +120,7 @@ function statusTag(status: MatchStatus): string {
             <small>{{ matchItem.playerColor === 'red' ? '执红' : '执黑' }}</small>
           </span>
           <span>
-            <strong>{{ matchItem.moves?.length ?? 0 }} 步</strong>
+            <strong>{{ matchItem.moves?.length ?? 0 }} 手</strong>
             <small>对局长度</small>
           </span>
           <span class="tag" :class="isActiveMatch(matchItem.status) ? 'success' : 'neutral'">

@@ -1,0 +1,78 @@
+.page-route-enter-active,
+.page-route-leave-active {
+  transition:
+    opacity var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+}
+
+.page-route-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.page-route-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity var(--motion-standard) var(--ease-standard);
+}
+
+.modal-enter-active .modal-card,
+.modal-leave-active .modal-card {
+  transition:
+    opacity var(--motion-standard) var(--ease-standard),
+    transform var(--motion-emphasis) var(--ease-enter);
+}
+
+.modal-enter-from,
+.modal-leave-to,
+.modal-enter-from .modal-card,
+.modal-leave-to .modal-card {
+  opacity: 0;
+}
+
+.modal-enter-from .modal-card {
+  transform: translateY(12px) scale(.98);
+}
+
+.modal-leave-to .modal-card {
+  transform: translateY(5px) scale(.99);
+}
+
+.list-enter-active,
+.list-leave-active,
+.list-move {
+  transition: all var(--motion-standard) var(--ease-standard);
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-route-enter-active,
+  .page-route-leave-active,
+  .modal-enter-active,
+  .modal-leave-active,
+  .modal-enter-active .modal-card,
+  .modal-leave-active .modal-card,
+  .list-enter-active,
+  .list-leave-active,
+  .list-move {
+    transition-duration: 1ms !important;
+  }
+
+  .page-route-enter-from,
+  .page-route-leave-to,
+  .modal-enter-from .modal-card,
+  .modal-leave-to .modal-card,
+  .list-enter-from,
+  .list-leave-to {
+    transform: none;
+  }
+}

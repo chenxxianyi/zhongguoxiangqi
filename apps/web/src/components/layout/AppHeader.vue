@@ -8,6 +8,7 @@ const route = useRoute()
 const ui = useUiStore()
 const title = computed(() => String(route.meta.title ?? '棋境'))
 const eyebrow = computed(() => String(route.meta.eyebrow ?? 'Xiangqi Lab'))
+const showStartAction = computed(() => !route.path.startsWith('/match/'))
 </script>
 
 <template>
@@ -16,7 +17,7 @@ const eyebrow = computed(() => String(route.meta.eyebrow ?? 'Xiangqi Lab'))
     <div class="page-heading"><span>{{ eyebrow }}</span><h1>{{ title }}</h1></div>
     <div class="top-actions">
       <button class="icon-button" aria-label="切换深浅主题" @click="ui.toggleTheme"><AppIcon :name="ui.resolvedTheme === 'dark' ? 'sun' : 'moon'" /></button>
-      <RouterLink class="primary-button compact" to="/new-game"><AppIcon name="play" />开始对局</RouterLink>
+      <RouterLink v-if="showStartAction" class="primary-button compact" to="/new-game"><AppIcon name="play" />开始对局</RouterLink>
     </div>
   </header>
 </template>

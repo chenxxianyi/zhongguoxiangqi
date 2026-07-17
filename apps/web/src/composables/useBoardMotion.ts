@@ -3,7 +3,8 @@ import type { MoveRecord } from '@/api/contracts'
 import type { BoardPiece, BoardSquare } from '@/types/xiangqi'
 import { getPiecesFromFEN } from '@/utils/board'
 
-export type PieceMotion = 'idle' | 'moving' | 'captured' | 'restored'
+export type PieceMotion = 'idle' | 'lifting' | 'moving' | 'settling' | 'captured' | 'restored'
+export type BoardMotionPhase = 'idle' | 'lifting' | 'moving' | 'capturing' | 'settling'
 
 export interface MotionBoardPiece extends BoardPiece {
   renderId: string
@@ -13,6 +14,12 @@ export interface MotionBoardPiece extends BoardPiece {
 
 export interface BoardArrivalMarker extends BoardSquare {
   key: number
+}
+
+export interface BoardCaptureMarker extends BoardSquare {
+  key: number
+  captured: string
+  actor: MoveRecord['actor']
 }
 
 interface BoardMotionOptions {
@@ -31,12 +38,15 @@ export interface BoardMoveSquares {
   to: BoardSquare
 }
 
-const MOVE_NEAR_MS = 210
-const MOVE_FAR_MS = 280
+const MOVE_NEAR_MS = 240
+const MOVE_FAR_MS = 420
 const AI_MOVE_EXTRA_MS = 20
-const UNDO_NEAR_MS = 180
-const UNDO_FAR_MS = 220
-const ARRIVAL_MARKER_MS = 440
+const UNDO_NEAR_MS = 220
+const UNDO_FAR_MS = 340
+const PIECE_LIFT_MS = 55
+const PIECE_SETTLE_MS = 70
+const ARRIVAL_MARKER_MS = 360
+const CAPTURE_MARKER_MS = 680
 
 function parseMove(move: string): BoardMoveSquares | null {
   if (!/^[a-i][0-9][a-i][0-9]$/.test(move)) return null
@@ -102,7 +112,7 @@ function moveDuration(record: MoveRecord, parsed: BoardMoveSquares, reverse: boo
 
   const actorOffset = record.actor === 'ai' ? AI_MOVE_EXTRA_MS : 0
   return Math.min(
-    MOVE_FAR_MS + AI_MOVE_EXTRA_MS,
+    MOVE_FAR_MS,
     Math.round(MOVE_NEAR_MS + (MOVE_FAR_MS - MOVE_NEAR_MS) * progress + actorOffset),
   )
 }
@@ -110,6 +120,7 @@ function moveDuration(record: MoveRecord, parsed: BoardMoveSquares, reverse: boo
 export function useBoardMotion(options: BoardMotionOptions) {
   let renderSequence = 0
   let markerSequence = 0
+  let captureMarkerSequence = 0
   let generation = 0
   let processing = false
   let observedMatchId = options.matchId.value
@@ -117,6 +128,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
   let latestFen = options.fen.value
   let latestMoves = observedMoves
   let markerTimer: ReturnType<typeof setTimeout> | null = null
+  let captureMarkerTimer: ReturnType<typeof setTimeout> | null = null
 
   const queue: QueuedMove[] = []
   const pendingWaits = new Map<ReturnType<typeof setTimeout>, () => void>()
@@ -127,6 +139,8 @@ export function useBoardMotion(options: BoardMotionOptions) {
     latestMoves.at(-1) ? parseMove(latestMoves.at(-1)!.move) : null,
   )
   const arrivalMarker = ref<BoardArrivalMarker | null>(null)
+  const captureMarker = ref<BoardCaptureMarker | null>(null)
+  const motionPhase = ref<BoardMotionPhase>('idle')
 
   const reducedMotion = ref(false)
   const motionQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -180,6 +194,19 @@ export function useBoardMotion(options: BoardMotionOptions) {
       .map((piece) => ({ ...piece, motion: 'idle', motionDurationMs: 0 }))
   }
 
+  function liftMovingPiece(record: MoveRecord, parsed: BoardMoveSquares, reverse: boolean) {
+    const sourceFen = reverse ? record.fenAfter : record.fenBefore
+    if (!matchesFen(sourceFen)) syncToFen(sourceFen)
+    const sourceSquare = reverse ? parsed.to : parsed.from
+    const movingPiece = activePieces().find((piece) => sameSquare(piece, sourceSquare))
+    if (!movingPiece) return null
+
+    pieces.value = pieces.value.map((piece) => piece.renderId === movingPiece.renderId
+      ? { ...piece, motion: 'lifting' as const, motionDurationMs: 0 }
+      : piece)
+    return movingPiece.renderId
+  }
+
   function wait(durationMs: number) {
     if (durationMs <= 0) return Promise.resolve()
 
@@ -206,6 +233,30 @@ export function useBoardMotion(options: BoardMotionOptions) {
       if (arrivalMarker.value?.key === marker.key) arrivalMarker.value = null
       markerTimer = null
     }, ARRIVAL_MARKER_MS)
+  }
+
+  function flashCapture(record: MoveRecord, square: BoardSquare) {
+    if (!record.captured) return
+    if (captureMarkerTimer) clearTimeout(captureMarkerTimer)
+
+    captureMarkerSequence += 1
+    const marker = {
+      ...square,
+      key: captureMarkerSequence,
+      captured: record.captured,
+      actor: record.actor,
+    }
+    captureMarker.value = marker
+    captureMarkerTimer = setTimeout(() => {
+      if (captureMarker.value?.key === marker.key) captureMarker.value = null
+      captureMarkerTimer = null
+    }, CAPTURE_MARKER_MS)
+  }
+
+  function clearCaptureMarker() {
+    if (captureMarkerTimer) clearTimeout(captureMarkerTimer)
+    captureMarkerTimer = null
+    captureMarker.value = null
   }
 
   function buildForwardPieces(record: MoveRecord, parsed: BoardMoveSquares, durationMs: number) {
@@ -282,6 +333,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
   }
 
   async function animateMove(queuedMove: QueuedMove, activeGeneration: number) {
+    clearCaptureMarker()
     const parsed = parseMove(queuedMove.record.move)
     if (!parsed) {
       syncToFen(
@@ -294,6 +346,18 @@ export function useBoardMotion(options: BoardMotionOptions) {
 
     const reverse = queuedMove.direction === 'reverse'
     const durationMs = reducedMotion.value ? 0 : moveDuration(queuedMove.record, parsed, reverse)
+    const liftedPieceId = liftMovingPiece(queuedMove.record, parsed, reverse)
+    if (!liftedPieceId) {
+      syncToFen(reverse ? queuedMove.record.fenBefore : queuedMove.record.fenAfter)
+      return
+    }
+
+    if (durationMs > 0) {
+      motionPhase.value = 'lifting'
+      await wait(PIECE_LIFT_MS)
+      if (activeGeneration !== generation) return
+    }
+
     const nextPieces = reverse
       ? buildReversePieces(queuedMove.record, parsed, durationMs)
       : buildForwardPieces(queuedMove.record, parsed, durationMs)
@@ -303,14 +367,25 @@ export function useBoardMotion(options: BoardMotionOptions) {
       return
     }
 
+    motionPhase.value = !reverse && queuedMove.record.captured ? 'capturing' : 'moving'
     pieces.value = nextPieces
     await wait(durationMs)
     if (activeGeneration !== generation) return
 
-    settlePieces(nextPieces)
     const destination = reverse ? parsed.from : parsed.to
+    const landingPieces = nextPieces
+      .filter((piece) => piece.motion !== 'captured')
+      .map((piece) => piece.renderId === liftedPieceId
+        ? { ...piece, motion: 'settling' as const, motionDurationMs: 0 }
+        : { ...piece, motion: 'idle' as const, motionDurationMs: 0 })
+    pieces.value = landingPieces
+    motionPhase.value = 'settling'
     lastSquare.value = destination
     flashArrival(destination)
+    if (!reverse) flashCapture(queuedMove.record, destination)
+    await wait(reducedMotion.value ? 0 : PIECE_SETTLE_MS)
+    if (activeGeneration !== generation) return
+    settlePieces(landingPieces)
   }
 
   async function processQueue() {
@@ -333,6 +408,7 @@ export function useBoardMotion(options: BoardMotionOptions) {
         : null
       processing = false
       isAnimating.value = false
+      motionPhase.value = 'idle'
     }
   }
 
@@ -352,8 +428,10 @@ export function useBoardMotion(options: BoardMotionOptions) {
     if (markerTimer) clearTimeout(markerTimer)
     markerTimer = null
     arrivalMarker.value = null
+    clearCaptureMarker()
     processing = false
     isAnimating.value = false
+    motionPhase.value = 'idle'
   }
 
   function resetBoard(fen: string, moves: MoveRecord[]) {
@@ -416,6 +494,8 @@ export function useBoardMotion(options: BoardMotionOptions) {
     lastSquare,
     lastMoveSquares,
     arrivalMarker,
+    captureMarker,
+    motionPhase,
     reducedMotion,
   }
 }

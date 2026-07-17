@@ -166,6 +166,12 @@ function statusClass(status: string): string {
           <strong>{{ learning.progress }}%</strong>
         </div>
         <i><b :style="{ width: `${learning.progress}%` }" /></i>
+        <ol class="job-stages" aria-label="构建阶段">
+          <li :class="{ done: learning.progress >= 20, active: learning.progress < 20 }">校验棋谱</li>
+          <li :class="{ done: learning.progress >= 55, active: learning.progress >= 20 && learning.progress < 55 }">提取局面</li>
+          <li :class="{ done: learning.progress >= 85, active: learning.progress >= 55 && learning.progress < 85 }">生成索引</li>
+          <li :class="{ done: learning.progress >= 100, active: learning.progress >= 85 && learning.progress < 100 }">发布版本</li>
+        </ol>
       </div>
       <div v-if="learning.jobError" class="error-state">{{ learning.jobError }}</div>
 

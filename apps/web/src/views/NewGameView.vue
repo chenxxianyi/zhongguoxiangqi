@@ -136,12 +136,16 @@ async function start() {
           <div><span class="piece-choice black-piece">将</span><strong>棋境 AI</strong><small>{{ setup.profile?.name || '等待后端配置' }}</small></div>
         </div>
         <div v-if="setup.profile" class="summary-lines">
+          <div><span>你的执色</span><strong>{{ setup.sideLabel }}</strong></div>
           <div><span>AI 模式</span><strong>{{ setup.modeLabel }}</strong></div>
           <div><span>搜索深度</span><strong>{{ setup.profile.maxDepth }} 层</strong></div>
           <div><span>悔棋</span><strong>本局允许</strong></div>
           <div><span>思考时间</span><strong>{{ setup.profile.moveTimeMs }}ms</strong></div>
         </div>
         <div v-else class="notice"><AppIcon name="info" /><p>后端难度配置可用后才能创建对局。</p></div>
+        <div v-if="setup.profile" class="setup-ready" role="status">
+          <AppIcon name="check" />配置已就绪，可开始本局
+        </div>
         <button class="primary-button full large" :disabled="!setup.profile || setup.loading" @click="start"><AppIcon name="play" />开始对局</button>
       </aside>
     </div>

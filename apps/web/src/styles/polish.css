@@ -1,0 +1,335 @@
+/* 全局交互精修 */
+:where(button, a, input, select) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(.primary-button, .secondary-button, .danger-button, .icon-button, .nav-item,
+  .choice-card, .mode-card, .board-toolbar button, .match-panel-tabs button,
+  .settings-nav button, .history-row) {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--ease-standard);
+}
+
+.icon-button {
+  min-width: var(--control-min);
+  min-height: var(--control-min);
+}
+
+.sidebar,
+.main-column,
+.topbar {
+  transition:
+    transform var(--motion-standard) var(--ease-standard),
+    margin var(--motion-standard) var(--ease-standard),
+    height var(--motion-standard) var(--ease-standard);
+}
+
+.board-finish-kicker {
+  font-size: 12px;
+}
+
+:where(.player-identity small, .engine-status small, .summary-versus small,
+  .match-opponent small, .match-score small, .opening-hit span, .library-meta span,
+  .board-check-callout small, .board-finish-card p, .modal-card > p) {
+  font-size: 12px;
+}
+
+.loading-state {
+  position: relative;
+  overflow: hidden;
+  min-height: 84px;
+  display: grid;
+  place-items: center;
+}
+
+.loading-state::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--surface) 74%, transparent) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: state-shimmer 1.4s infinite;
+  pointer-events: none;
+}
+
+@keyframes state-shimmer {
+  to { transform: translateX(100%); }
+}
+
+.history-stats {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.history-stats article:last-child {
+  border-right: 0;
+}
+
+.history-filterbar {
+  min-height: 62px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-filterbar > div {
+  display: flex;
+  gap: 6px;
+}
+
+.history-filterbar .filter-button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.history-filterbar .filter-button.active {
+  color: var(--cinnabar);
+  border-color: color-mix(in srgb, var(--cinnabar) 28%, var(--line));
+  background: var(--cinnabar-soft);
+}
+
+.history-filterbar > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.search-field svg {
+  pointer-events: none;
+}
+
+.record-dropzone {
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  transition: background-color var(--motion-fast), border-color var(--motion-fast), transform var(--motion-fast);
+}
+
+.record-dropzone.dragging {
+  border-color: var(--cinnabar);
+  background: var(--cinnabar-soft);
+  transform: translateY(-2px);
+}
+
+.record-drop-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.record-drop-hint svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.setup-ready {
+  min-height: 40px;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  background: var(--jade-soft);
+  color: var(--jade);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.setup-ready svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.analysis-position-panel {
+  padding: 22px;
+}
+
+.analysis-board-preview {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  margin-top: 12px;
+  border-radius: 14px;
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+
+.analysis-board-preview .mini-board {
+  width: min(220px, 100%);
+  box-shadow: var(--shadow-md);
+  transform: none;
+}
+
+.analysis-position-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.analysis-position-actions .secondary-button {
+  padding: 0 10px;
+}
+
+.analysis-position-actions .next svg {
+  transform: rotate(180deg);
+}
+
+.job-stages {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.job-stages li {
+  position: relative;
+  padding-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.job-stages li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--line);
+}
+
+.job-stages li.done,
+.job-stages li.active {
+  color: var(--jade);
+  font-weight: 700;
+}
+
+.job-stages li.done::before,
+.job-stages li.active::before {
+  background: var(--jade);
+}
+
+.job-stages li.active::before {
+  animation: pulse 1.2s infinite;
+}
+
+.settings-nav button[aria-selected="true"] {
+  position: relative;
+}
+
+.settings-tab[role="tabpanel"]:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--cinnabar) 35%, transparent);
+  outline-offset: 3px;
+}
+
+.match-focus-button {
+  min-width: var(--control-min);
+  min-height: var(--control-min);
+}
+
+.match-player-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.match-player-actions time {
+  min-width: auto;
+}
+
+.match-focus-button.active {
+  color: var(--cinnabar);
+  background: var(--cinnabar-soft);
+}
+
+.app-shell.focus-mode .sidebar {
+  transform: translateX(-105%);
+}
+
+.app-shell.focus-mode .main-column {
+  margin-left: 0;
+}
+
+.app-shell.focus-mode .topbar {
+  height: 58px;
+}
+
+.app-shell.focus-mode main {
+  padding-top: 18px;
+}
+
+.app-shell.focus-mode .match-shell {
+  grid-template-columns: minmax(540px, 790px) minmax(300px, 390px);
+}
+
+.sound-enabled {
+  color: var(--jade) !important;
+  border-color: color-mix(in srgb, var(--jade) 45%, var(--line)) !important;
+  background: var(--jade-soft) !important;
+}
+
+.move-list li.current {
+  scroll-margin-block: 16px;
+}
+
+.match-finish-actions {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .hero-board-wrap {
+    display: grid;
+    min-height: 310px;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .hero-board-wrap .mini-board {
+    width: min(230px, 68vw);
+  }
+
+  .app-shell.focus-mode .topbar {
+    height: var(--topbar);
+  }
+}
+
+@media (max-width: 680px) {
+  .hero-board-wrap {
+    min-height: 270px;
+  }
+
+  .hero-stamp {
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .record-drop-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-state::after {
+    animation: none;
+    display: none;
+  }
+}

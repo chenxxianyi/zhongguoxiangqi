@@ -30,6 +30,7 @@ Content-Type: application/json
 - `inCheck`：当前行棋方是否正被将军；
 - `termination`：终局原因，包括 `checkmate`、`no_legal_moves`、`resign` 等；
 - `moves[].givesCheck`：该步是否造成将军，旧对局会根据保存的 `fenAfter` 自动补算。
+- `moves[].captured`：被吃棋子的标准标识，例如 `black_rook`、`red_pawn`；未吃子时省略。
 
 实时事件：
 

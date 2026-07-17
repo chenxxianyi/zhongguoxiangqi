@@ -110,8 +110,26 @@ describe('XiangqiBoard', () => {
     expect(wrapper.findAll('.move-hint')).toHaveLength(2)
     expect(wrapper.findAll('.move-hint.capture')).toHaveLength(1)
 
+    await wrapper.findAll('.move-hint')[0]!.trigger('pointerenter')
+    expect(wrapper.findAll('.board-route-layer line')[0]!.classes()).toContain('active')
+    expect(wrapper.findAll('.board-route-layer line')[1]!.classes()).toContain('muted')
+
     await wrapper.find('.move-hint.capture').trigger('click')
     expect(match.submitMove).toHaveBeenCalledWith(0, 5, 0, 3)
+  })
+
+  it('exposes one roving keyboard entry for pieces and legal targets', () => {
+    match.hints = [
+      { file: 1, rank: 5 },
+      { file: 0, rank: 3 },
+    ]
+    const wrapper = mount(XiangqiBoard, {
+      global: { stubs: { AppIcon: true } },
+    })
+
+    const boardTargets = wrapper.findAll('[data-board-focus]')
+    expect(boardTargets.filter((target) => target.attributes('tabindex') === '0')).toHaveLength(1)
+    expect(wrapper.find('#board-keyboard-help').text()).toContain('方向键')
   })
 
   it('keeps the previous move origin and destination visible', () => {
@@ -123,6 +141,7 @@ describe('XiangqiBoard', () => {
 
     expect(wrapper.find('.last-move-marker.from').attributes('style')).toContain('top: 55.05%')
     expect(wrapper.find('.last-move-marker.to').attributes('style')).toContain('top: 34.83%')
+    expect(wrapper.find('.last-move-route-layer line').exists()).toBe(true)
   })
 
   it('warns when the side to move is in check', () => {
@@ -138,7 +157,7 @@ describe('XiangqiBoard', () => {
     expect(wrapper.find('.board-check-callout').text()).toContain('将军')
   })
 
-  it('shows a terminal checkmate card with the player result', () => {
+  it('shows a terminal checkmate card with the player result and actions', async () => {
     match.fen = '4k4/3RR4/6H2/9/9/9/9/9/9/4K4 b'
     match.selectedPos = null
     match.sideToMove = 'black'
@@ -153,6 +172,10 @@ describe('XiangqiBoard', () => {
     expect(wrapper.find('.board-check-callout').exists()).toBe(false)
     expect(wrapper.find('.board-finish-card').text()).toContain('绝杀')
     expect(wrapper.find('.board-finish-card').text()).toContain('你获胜')
+    await wrapper.find('.board-finish-actions .primary-button').trigger('click')
+    await wrapper.find('.board-finish-actions .secondary-button').trigger('click')
+    expect(wrapper.emitted('restart')).toHaveLength(1)
+    expect(wrapper.emitted('review')).toHaveLength(1)
   })
 
   it('keeps the moving piece mounted while a captured piece exits', async () => {
@@ -166,16 +189,25 @@ describe('XiangqiBoard', () => {
     match.fen = afterFen
     await nextTick()
 
+    expect(wrapper.find('.board-piece-track.lifting').exists()).toBe(true)
+    expect(wrapper.find('.xiangqi-board').attributes('data-motion-phase')).toBe('lifting')
+
+    await vi.advanceTimersByTimeAsync(60)
+    await nextTick()
+
     expect(wrapper.find('.board-piece-track.moving').exists()).toBe(true)
     expect(wrapper.find('.board-piece-track.captured').exists()).toBe(true)
+    expect(wrapper.find('.xiangqi-board').attributes('data-motion-phase')).toBe('capturing')
     expect(wrapper.find('.board-piece.red').element).toBe(movingPiece)
     expect(wrapper.findAll('.board-piece')).toHaveLength(2)
 
-    await vi.advanceTimersByTimeAsync(400)
+    await vi.advanceTimersByTimeAsync(350)
     await nextTick()
 
     expect(wrapper.findAll('.board-piece')).toHaveLength(1)
     expect(wrapper.find('.board-piece-track.moving').exists()).toBe(false)
+    expect(wrapper.find('.capture-event-callout').text()).toBe('吃车')
+    expect(wrapper.find('.capture-event-layer').attributes('aria-label')).toBe('你吃掉了对方的车')
     vi.useRealTimers()
   })
 
@@ -191,15 +223,21 @@ describe('XiangqiBoard', () => {
     match.fen = beforeFen
     await nextTick()
 
+    expect(wrapper.find('.board-piece-track.lifting').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(60)
+    await nextTick()
+
     expect(wrapper.find('.board-piece-track.moving').exists()).toBe(true)
     expect(wrapper.find('.board-piece-track.restored').exists()).toBe(true)
 
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(310)
     await nextTick()
 
     expect(wrapper.findAll('.board-piece')).toHaveLength(2)
     expect(wrapper.find('.board-piece.red').attributes('aria-label')).toContain('位置 0,5')
     expect(wrapper.find('.board-piece.black').attributes('aria-label')).toContain('位置 0,3')
+    expect(wrapper.find('.capture-event-layer').exists()).toBe(false)
     vi.useRealTimers()
   })
 })

@@ -27,6 +27,7 @@ const recordsUnavailable = ref(false)
 const versionsUnavailable = ref(false)
 
 const recentMatches = computed(() => matches.value.slice(0, 5))
+const activeMatch = computed(() => matches.value.find((match) => isActiveMatch(match.status)) ?? null)
 const latestMatchPieces = computed(() => {
   const latestMatch = matches.value[0]
   return latestMatch ? getPiecesFromFEN(latestMatch.fen) : []
@@ -99,11 +100,21 @@ onMounted(loadDashboard)
         <h2>在每一次落子中，<br><em>看见自己的进步。</em></h2>
         <p>与可调节难度的 AI 对弈，导入经典棋谱，建立属于你的棋风学习库。</p>
         <div class="hero-actions">
-          <RouterLink class="primary-button" to="/new-game">
-            <AppIcon name="play" />新建对局
+          <RouterLink
+            class="primary-button"
+            :to="activeMatch ? getMatchDestination(activeMatch) : '/new-game'"
+          >
+            <AppIcon :name="activeMatch ? 'board' : 'play'" />{{ activeMatch ? '继续对局' : '新建对局' }}
           </RouterLink>
           <RouterLink
-            v-if="!matchesUnavailable && matches.length > 0"
+            v-if="activeMatch"
+            class="secondary-button"
+            to="/new-game"
+          >
+            新开一局
+          </RouterLink>
+          <RouterLink
+            v-else-if="!matchesUnavailable && matches.length > 0"
             class="text-button"
             :to="getMatchDestination(matches[0]!)"
           >
@@ -150,7 +161,7 @@ onMounted(loadDashboard)
     <div class="dashboard-grid">
       <article class="surface recent-match-panel">
         <div class="panel-header">
-          <div><span class="section-kicker">最近对局</span><h3>复盘你的每一步</h3></div>
+          <div><span class="section-kicker">最近对局</span><h3>复盘你的每一手</h3></div>
           <RouterLink
             v-if="!matchesUnavailable && matches.length > 0"
             class="text-button small"
@@ -185,7 +196,7 @@ onMounted(loadDashboard)
               <small>{{ matchItem.playerColor === 'red' ? '执红' : '执黑' }}</small>
             </span>
             <span class="match-score">
-              <strong>{{ matchItem.moves?.length ?? 0 }} 步</strong>
+              <strong>{{ matchItem.moves?.length ?? 0 }} 手</strong>
               <small>{{ formatRelativeDate(matchItem.createdAt) }}</small>
             </span>
             <span v-if="isActiveMatch(matchItem.status)" class="tag neutral">进行中</span>

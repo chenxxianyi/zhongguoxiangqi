@@ -5,6 +5,7 @@ export type ThemeChoice = 'light' | 'dark' | 'system'
 
 export const useUiStore = defineStore('ui', () => {
   const sidebarOpen = ref(false)
+  const matchFocusMode = ref(false)
   const saved = localStorage.getItem('xiangqi-theme') as ThemeChoice | null
   const theme = ref<ThemeChoice>(saved ?? 'light')
   const toasts = ref<Array<{ id: number; message: string }>>([])
@@ -46,5 +47,15 @@ export const useUiStore = defineStore('ui', () => {
     if (theme.value === 'system') applyTheme()
   })
 
-  return { sidebarOpen, theme, resolvedTheme, toasts, setTheme, toggleTheme, showToast, dismissToast }
+  return {
+    sidebarOpen,
+    matchFocusMode,
+    theme,
+    resolvedTheme,
+    toasts,
+    setTheme,
+    toggleTheme,
+    showToast,
+    dismissToast,
+  }
 })

@@ -4,6 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAnalysisStore } from '@/stores/analysis'
 import { useMatchStore } from '@/stores/match'
 import { useUiStore } from '@/stores/ui'
+import MiniBoard from '@/components/board/MiniBoard.vue'
+import AppIcon from '@/components/common/AppIcon.vue'
+import { getPiecesFromFEN } from '@/utils/board'
 import { iccsToDisplay } from '@/utils/moveNotation'
 import {
   getPlayerResult,
@@ -24,6 +27,22 @@ const moveRecordsByPly = computed(() =>
   new Map(match.moves.map((move) => [move.ply, move])),
 )
 const playerResult = computed(() => getPlayerResult(match.outcome, match.playerColor))
+const selectedMove = computed(() => {
+  const moves = analysis.currentResult?.moves ?? []
+  return moves.find((move) => move.ply === selectedMovePly.value) ?? moves[0] ?? null
+})
+const selectedPositionPieces = computed(() => {
+  const record = selectedMove.value ? moveRecordsByPly.value.get(selectedMove.value.ply) : null
+  return getPiecesFromFEN(record?.fenAfter || match.fen)
+})
+
+function selectAdjacentMove(direction: -1 | 1) {
+  const moves = analysis.currentResult?.moves ?? []
+  if (!moves.length) return
+  const currentIndex = Math.max(0, moves.findIndex((move) => move.ply === selectedMove.value?.ply))
+  const nextIndex = Math.min(moves.length - 1, Math.max(0, currentIndex + direction))
+  selectedMovePly.value = moves[nextIndex]?.ply ?? null
+}
 
 function fenBeforeFor(ply: number): string {
   return moveRecordsByPly.value.get(ply)?.fenBefore || match.initialFen
@@ -116,7 +135,7 @@ function formatScore(loss?: number): string {
           <div>
             <span class="section-kicker">对局结果</span>
             <h2>{{ match.engine }} 分析报告</h2>
-            <p>共分析 {{ analysis.currentResult.analyzedMoves }} 步着法</p>
+            <p>共分析 {{ analysis.currentResult.analyzedMoves }} 手着法</p>
           </div>
         </div>
         <div class="analysis-score">
@@ -139,7 +158,7 @@ function formatScore(loss?: number): string {
             <div class="panel-header">
               <div>
                 <span class="section-kicker">逐着分析</span>
-                <h3>每步评分</h3>
+                <h3>每手评分</h3>
               </div>
             </div>
             <div v-if="analysis.currentResult.moves.length === 0" class="empty-state">
@@ -149,7 +168,7 @@ function formatScore(loss?: number): string {
               v-for="move in analysis.currentResult.moves"
               :key="move.ply"
               class="turning-row"
-              :class="{ active: selectedMovePly === move.ply }"
+              :class="{ active: selectedMove?.ply === move.ply }"
               @click="selectedMovePly = selectedMovePly === move.ply ? null : move.ply"
             >
               <span class="turn-number">{{ move.ply }}</span>
@@ -166,6 +185,27 @@ function formatScore(loss?: number): string {
         </div>
 
         <aside class="analysis-side">
+          <article class="surface analysis-position-panel">
+            <div class="panel-header">
+              <div>
+                <span class="section-kicker">局面联动</span>
+                <h3>第 {{ selectedMove?.ply ?? 0 }} 手</h3>
+              </div>
+            </div>
+            <div class="analysis-board-preview">
+              <MiniBoard :pieces="selectedPositionPieces" />
+            </div>
+            <div class="analysis-position-actions">
+              <button class="secondary-button" :disabled="(selectedMove?.ply ?? 1) <= 1" @click="selectAdjacentMove(-1)">
+                <AppIcon name="chevron" />上一手
+              </button>
+              <button
+                class="secondary-button next"
+                :disabled="(selectedMove?.ply ?? 0) >= analysis.currentResult.moves.length"
+                @click="selectAdjacentMove(1)"
+              >下一手<AppIcon name="chevron" /></button>
+            </div>
+          </article>
           <article class="surface weakness-panel">
             <span class="section-kicker">分析概要</span>
             <h3>着法统计</h3>

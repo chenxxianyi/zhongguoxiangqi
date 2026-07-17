@@ -1,203 +1,85 @@
-# Design System Master File
+# 棋境 Xiangqi Lab · UI 与动效规范
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+> 本规范服务于人机对弈、复盘、棋谱与学习场景。页面级规范存在时优先于本文。
 
----
+## 设计方向
 
-**Project:** 棋境 Xiangqi Lab
-**Generated:** 2026-07-15 09:29:15
-**Category:** Sustainable Energy / Climate Tech
+棋境采用“现代东方棋院”语言：宣纸色作为画布，朱砂负责品牌与主行动，青玉负责成功与稳定，赭石负责棋局提示，木色只用于棋盘。整体克制、安静、专注，不使用高饱和电竞霓虹风格。
 
----
+## 色彩令牌
 
-## Global Rules
+| 语义 | 变量 | 默认色 | 用途 |
+| --- | --- | --- | --- |
+| 画布 | `--paper` | `#F3EEE4` | 页面背景 |
+| 表面 | `--surface` | `#FFFDF8` | 卡片、面板、弹窗 |
+| 主文字 | `--ink` | `#1C2521` | 标题和正文 |
+| 次文字 | `--muted` | `#6D756F` | 辅助说明 |
+| 品牌 | `--cinnabar` | `#A84136` | 主按钮、选中、当前状态 |
+| 成功 | `--jade` | `#3F6958` | 健康、完成、胜利辅助状态 |
+| 提醒 | `--ochre` | `#AD7936` | 上一步、吃子与轻提示 |
+| 危险 | `--color-critical` | `#8F2F2A` | 删除、认输、错误 |
+| 棋盘 | `--board` | `#D9B477` | 仅棋盘区域 |
 
-### Color Palette
+品牌朱砂与危险红必须语义分离；常规选中态不能使用危险色。
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#4F46E5` | `--color-primary` |
-| Secondary | `#818CF8` | `--color-secondary` |
-| CTA/Accent | `#22C55E` | `--color-cta` |
-| Background | `#EEF2FF` | `--color-background` |
-| Text | `#312E81` | `--color-text` |
+## 字体与字号
 
-**Color Notes:** Learning indigo + progress green
+- 标题与棋文化内容：`Noto Serif SC` / 系统宋体回退。
+- 正文与交互：`Noto Sans SC` / 系统黑体回退。
+- 正文推荐 14–16px，辅助文字不得小于 12px，移动端输入控件不低于 16px。
+- 数字、FEN 与版本号可使用等宽数字特性，但不更换整体字体家族。
 
-### Typography
+## 间距、圆角与层级
 
-- **Heading Font:** Noto Sans SC
-- **Body Font:** Noto Sans SC
-- **Mood:** chinese, simplified, modern, professional, multilingual, readable
-- **Google Fonts:** [Noto Sans SC + Noto Sans SC](https://fonts.google.com/share?selection.family=Noto+Sans+SC:wght@300;400;500;700)
+- 采用 4px 基线：`4 / 8 / 12 / 16 / 20 / 24 / 32 / 40 / 48`。
+- 控件最小点击区域 44×44px；卡片圆角 16px，弹窗 18–24px，紧凑控件 10px。
+- 阴影用于区分层级而非装饰：棋盘与弹窗可使用大阴影，普通卡片只保留边框和轻阴影。
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
-```
+## 动效层级
 
-### Spacing Variables
+| 层级 | 时长 | 场景 |
+| --- | --- | --- |
+| L0 | 100–140ms | hover、focus、按钮反馈 |
+| L1 | 140–180ms | 选中、标签切换、筛选 |
+| L2 | 180–260ms | 路由、弹窗、内容进出 |
+| L3 | 220–650ms | 行棋、落点、吃子 |
+| L4 | 300–900ms | 将军、绝杀、终局 |
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
+- 标准缓动：`cubic-bezier(.2, 0, 0, 1)`。
+- 进入缓动：`cubic-bezier(.16, 1, .3, 1)`。
+- 退出缓动：`cubic-bezier(.4, 0, 1, 1)`。
+- 动效只表达状态因果；禁止循环漂浮、布局抖动和无意义缩放。
+- `prefers-reduced-motion: reduce` 下取消位移、缩放和循环动画，保留即时状态变化。
 
-### Shadow Depths
+## 对局反馈优先级
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+1. 选择棋子：清晰描边，并显示合法路线与落点。
+2. 落子：移动完成后显示上一步起点、终点和短暂到达环。
+3. 吃子：目标点冲击环、短文案与区别于普通落子的声音。
+4. 将军：将帅与状态提示同时变化，不依赖颜色单独传达。
+5. 杀棋：棋盘终局层、明确胜负和复盘/再来一局行动。
 
----
+## 无障碍与交互规范
 
-## Component Specs
+- 所有交互必须有键盘焦点样式；设置标签支持方向键、Home、End。
+- 弹窗必须锁定焦点、支持 Escape、关闭后恢复原焦点。
+- 状态提示使用 `aria-live`，重要终局使用 `role=alert`。
+- 图标必须来自统一 SVG 图标集，不用 Emoji 代替功能图标。
+- 不能仅依靠颜色传达胜负、选中、将军和错误。
+- 保证浅色模式正文对比度达到 WCAG AA，移动端不出现水平滚动。
 
-### Buttons
+## 响应式基线
 
-```css
-/* Primary Button */
-.btn-primary {
-  background: #22C55E;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+- 1440px：对局区优先，棋盘/信息面板约 70/30。
+- 1024px：收紧留白，新建对局摘要改为非悬浮布局。
+- 768px：侧栏抽屉化，对局面板移到棋盘下方。
+- 375px：保留首页棋盘视觉；表格转可滚动或信息行；核心行动保持 44px 点击区。
 
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+## 发布前检查
 
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #4F46E5;
-  border: 2px solid #4F46E5;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
-
-### Cards
-
-```css
-.card {
-  background: #EEF2FF;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
-
-### Inputs
-
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
-
-.input:focus {
-  border-color: #4F46E5;
-  outline: none;
-  box-shadow: 0 0 0 3px #4F46E520;
-}
-```
-
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Vibrant & Block-based
-
-**Keywords:** Bold, energetic, playful, block layout, geometric shapes, high color contrast, duotone, modern, energetic
-
-**Best For:** Startups, creative agencies, gaming, social media, youth-focused, entertainment, consumer
-
-**Key Effects:** Large sections (48px+ gaps), animated patterns, bold hover (color shift), scroll-snap, large type (32px+), 200-300ms
-
-### Page Pattern
-
-**Pattern Name:** App Store Style Landing
-
-- **Conversion Strategy:** Show real screenshots. Include ratings (4.5+ stars). QR code for mobile. Platform-specific CTAs.
-- **CTA Placement:** Download buttons prominent (App Store + Play Store) throughout
-- **Section Order:** 1. Hero with device mockup, 2. Screenshots carousel, 3. Features with icons, 4. Reviews/ratings, 5. Download CTAs
-
----
-
-## Anti-Patterns (Do NOT Use)
-
-- ❌ Flat design without depth
-- ❌ Text-heavy pages
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
-
----
-
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- [ ] 375 / 768 / 1024 / 1440 四档无溢出。
+- [ ] 浅色、深色与系统主题均可辨识。
+- [ ] 键盘能完成导航、弹窗与设置切换。
+- [ ] 减少动态效果模式下无持续动画。
+- [ ] 加载、空、错误、成功状态均有清晰反馈。
+- [ ] 对局的上一步、路线、吃子、将军、杀棋不会互相遮挡。

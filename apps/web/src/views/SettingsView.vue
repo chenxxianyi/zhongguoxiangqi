@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { getEngineHealth, getLicenses } from '@/api/system'
 import { useUiStore, type ThemeChoice } from '@/stores/ui'
@@ -19,6 +19,25 @@ const tabs = [
   { id: 'engine', label: '引擎诊断' },
   { id: 'about', label: '关于与许可证' },
 ] as const
+
+type TabId = typeof tabs[number]['id']
+
+async function selectTab(tabId: TabId) {
+  activeTab.value = tabId
+  await nextTick()
+  document.getElementById(`settings-tab-${tabId}`)?.focus()
+}
+
+function handleTabKeydown(event: KeyboardEvent, index: number) {
+  let nextIndex: number | undefined
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length
+  else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
+  else if (event.key === 'Home') nextIndex = 0
+  else if (event.key === 'End') nextIndex = tabs.length - 1
+  else return
+  event.preventDefault()
+  void selectTab(tabs[nextIndex]!.id)
+}
 
 async function checkEngineHealth() {
   engineLoading.value = true
@@ -57,17 +76,30 @@ onMounted(() => {
     <div class="settings-layout">
       <div class="settings-nav surface" role="tablist" aria-label="设置分类">
         <button
-          v-for="tab in tabs"
+          v-for="(tab, index) in tabs"
           :key="tab.id"
           :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
+          role="tab"
+          :id="`settings-tab-${tab.id}`"
+          :aria-controls="`settings-panel-${tab.id}`"
+          :aria-selected="activeTab === tab.id"
+          :tabindex="activeTab === tab.id ? 0 : -1"
+          @click="selectTab(tab.id)"
+          @keydown="handleTabKeydown($event, index)"
         >
           {{ tab.label }}
         </button>
       </div>
 
       <div class="settings-content">
-        <section v-if="activeTab === 'preference'" class="settings-tab active surface">
+        <section
+          v-if="activeTab === 'preference'"
+          id="settings-panel-preference"
+          class="settings-tab active surface"
+          role="tabpanel"
+          aria-labelledby="settings-tab-preference"
+          tabindex="0"
+        >
           <div class="panel-header">
             <div>
               <span class="section-kicker">界面偏好</span>
@@ -91,7 +123,14 @@ onMounted(() => {
           </div>
         </section>
 
-        <section v-else-if="activeTab === 'engine'" class="settings-tab active surface">
+        <section
+          v-else-if="activeTab === 'engine'"
+          id="settings-panel-engine"
+          class="settings-tab active surface"
+          role="tabpanel"
+          aria-labelledby="settings-tab-engine"
+          tabindex="0"
+        >
           <div class="panel-header">
             <div>
               <span class="section-kicker">引擎诊断</span>
@@ -133,7 +172,14 @@ onMounted(() => {
           </button>
         </section>
 
-        <section v-else class="settings-tab active surface">
+        <section
+          v-else
+          id="settings-panel-about"
+          class="settings-tab active surface"
+          role="tabpanel"
+          aria-labelledby="settings-tab-about"
+          tabindex="0"
+        >
           <div class="panel-header">
             <div>
               <span class="section-kicker">关于棋境</span>
