@@ -34,6 +34,7 @@ html[data-theme="dark"]{--paper:#141916;--paper-deep:#0e120f;--surface:#1d2420;-
 /* Vue component integration */
 a.nav-item,a.primary-button,a.secondary-button,a.text-button,.match-row{text-decoration:none}
 .board-palace{position:absolute;inset:4.5%;width:91%;height:91%;z-index:0;pointer-events:none;overflow:visible}
+.xiangqi-board:before{border-right:1.5px solid var(--board-line);border-bottom:1.5px solid var(--board-line)}
 .modal-overlay{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:rgba(18,20,18,.55);backdrop-filter:blur(4px);padding:16px}
 .modal-card{position:relative;width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:var(--shadow-lg);text-align:center}
 .modal-card>p{color:var(--muted);font-size:11px;margin:8px 0 22px}.modal-actions{display:flex;justify-content:center;gap:9px}.toast{border:0;text-align:left}
